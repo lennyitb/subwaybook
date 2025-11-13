@@ -2,6 +2,7 @@ import gtfs_kit as gk
 import pandas as pd
 from datetime import datetime, timedelta
 from collections import defaultdict
+from shapely.geometry import Point, Polygon
 
 
 """

@@ -1,0 +1,55 @@
+route_id,direction_id,direction_name
+L,0,to Manhattan
+L,1,to Brooklyn
+A,0,to Manhattan
+A,1,to Queens
+1,0,to The Bronx
+1,1,to Manhattan
+2,0,to The Bronx
+2,1,to Brooklyn
+3,0,to Manhattan
+3,1,to Brooklyn
+4,0,to The Bronx
+4,1,to Manhattan
+5,0,Northbound
+5,1,Southbound
+6,0,to The Bronx
+6,1,to Manhattan
+6X,0,to The Bronx
+6X,1,to Manhattan
+7,0,to Queens
+7,1,to Manhattan
+7X,0,to Queens
+7X,1,to The Bronx
+B,0,to The Bronx
+B,1,to Brooklyn
+C,0,to Manhattan
+C,1,to Brooklyn
+D,0,to The Bronx
+D,1,to Brooklyn
+E,0,to Queens
+E,1,to Manhattan
+F,0,to Queens
+F,1,to Brooklyn
+G,0,to Queens
+G,1,to Brooklyn
+H,0,to Broad Channel
+H,1,to Rockaway Park
+J,0,to Queens
+J,1,to Manhattan
+Z,0,to Queens
+Z,1,to Manhattan
+GS,0,to Times Square
+GS,1,to Grand Central
+FS,0,to Franklin Av
+FS,1,to Prospect Park
+M,0,to Forest Hills
+M,1,to Middle Village
+N,0,to Queens
+N,1,to Brooklyn
+Q,0,to Manhattan
+Q,1,to Brooklyn
+R,0,to Queens
+R,1,to Brooklyn
+W,0,to Queens
+W,1,to Manhattan

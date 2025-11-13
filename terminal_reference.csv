@@ -1,0 +1,30 @@
+route_id,route_name,direction_0_terminal,direction_1_terminal
+1,Broadway - 7 Avenue Local,Van Cortlandt Park-242 St,South Ferry
+2,7 Avenue Express,Wakefield-241 St,Flatbush Av-Brooklyn College
+3,7 Avenue Express,Harlem-148 St,New Lots Av
+4,Lexington Avenue Express,Woodlawn,New Lots Av
+5,Lexington Avenue Express,Eastchester-Dyre Av,Flatbush Av-Brooklyn College
+6,Lexington Avenue Local,Pelham Bay Park,Brooklyn Bridge-City Hall
+6X,Pelham Bay Park Express,Pelham Bay Park,Brooklyn Bridge-City Hall
+7,Flushing Local,Flushing-Main St,34 St-Hudson Yards
+7X,Flushing Express,Flushing-Main St,34 St-Hudson Yards
+A,8 Avenue Express,Inwood-207 St,Far Rockaway-Mott Av
+B,6 Avenue Express,Bedford Park Blvd,Brighton Beach
+C,8 Avenue Local,168 St,Euclid Av
+D,6 Avenue Express,Norwood-205 St,Coney Island-Stillwell Av
+E,8 Avenue Local,Jamaica Center-Parsons/Archer,World Trade Center
+F,Queens Blvd Express/6 Av Local,Jamaica-179 St,Coney Island-Stillwell Av
+FS,Franklin Avenue Shuttle,Franklin Av,Prospect Park
+FX,Brooklyn F Express,Jamaica-179 St,Coney Island-Stillwell Av
+G,Brooklyn-Queens Crosstown,Court Sq,Church Av
+GS,42 St Shuttle,Times Sq-42 St,Grand Central-42 St
+H,Rockaway Park Shuttle,Broad Channel,Rockaway Park-Beach 116 St
+J,Nassau St Local,Jamaica Center-Parsons/Archer,Broad St
+L,14 St-Canarsie Local,8 Av,Canarsie-Rockaway Pkwy
+M,Queens Blvd Local/6 Av Local,Forest Hills-71 Av,Middle Village-Metropolitan Av
+N,Broadway Local,Astoria-Ditmars Blvd,Coney Island-Stillwell Av
+Q,Broadway Express,96 St,Coney Island-Stillwell Av
+R,Broadway Local,Forest Hills-71 Av,Bay Ridge-95 St
+SI,Staten Island Railway,St George,Tottenville
+W,Broadway Local,Astoria-Ditmars Blvd,86 St
+Z,Nassau St Express,Jamaica Center-Parsons/Archer,Broad St
