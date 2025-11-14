@@ -431,11 +431,11 @@ def calculate_travel_time_matrix(feed, route_id, direction_id, service_id='Weekd
 
 def calculate_travel_time_matrix_by_hour(feed, route_id, direction_id, hour, service_id='Weekday', canonical_station_order=None):
     """
-    Calculate a travel time matrix for a route filtered by hour of day.
+    Calculate a travel time matrix for a route filtered by hour(s) of day.
 
     For each pair of stations (origin, destination), calculates the average
     travel time across trips where the departure from the origin station
-    occurs within the specified hour.
+    occurs within the specified hour or hour range.
 
     Parameters:
     -----------
@@ -445,8 +445,10 @@ def calculate_travel_time_matrix_by_hour(feed, route_id, direction_id, hour, ser
         The route ID (e.g., 'A', 'L', '7')
     direction_id : int
         Direction ID (0 or 1)
-    hour : int
-        Hour of day (0-23) to filter trips by (based on departure from origin)
+    hour : int or tuple of (int, int)
+        Hour(s) of day to filter trips by (based on departure from origin).
+        - Single int (0-23): filters to that specific hour (e.g., 7 = 7:00-7:59 AM)
+        - Tuple (start, end): filters to hour range inclusive (e.g., (7, 9) = 7:00-9:59 AM)
     service_id : str, default='Weekday'
         Service ID to filter by
     canonical_station_order : list, optional
@@ -457,7 +459,15 @@ def calculate_travel_time_matrix_by_hour(feed, route_id, direction_id, hour, ser
     pd.DataFrame
         Travel time matrix with station names as both row and column indices.
         Values are travel times in minutes (float).
-        NaN indicates no direct service between those stations during this hour.
+        NaN indicates no direct service between those stations during this hour/range.
+
+    Examples:
+    ---------
+    # Single hour (7 AM)
+    >>> matrix = calculate_travel_time_matrix_by_hour(feed, 'A', 0, hour=7)
+
+    # Hour range (7-9 AM inclusive)
+    >>> matrix = calculate_travel_time_matrix_by_hour(feed, 'A', 0, hour=(7, 9))
     """
     # Get station ordering
     if canonical_station_order is None:
@@ -470,6 +480,13 @@ def calculate_travel_time_matrix_by_hour(feed, route_id, direction_id, hour, ser
 
     stop_ids = [s[0] for s in station_order]
     stop_names = [s[1] for s in station_order]
+
+    # Parse hour parameter to determine range
+    if isinstance(hour, tuple) or isinstance(hour, list):
+        hour_start, hour_end = hour
+        hour_range = range(hour_start, hour_end + 1)  # Inclusive range
+    else:
+        hour_range = [hour]  # Single hour
 
     # Get all trips for this route/direction/service
     trips = feed.trips[
@@ -508,10 +525,10 @@ def calculate_travel_time_matrix_by_hour(feed, route_id, direction_id, hour, ser
                 })
 
         # Calculate travel time between each pair of stops on this trip
-        # Only include if departure from origin is within the specified hour
+        # Only include if departure from origin is within the specified hour range
         for i, origin in enumerate(stops_data):
-            # Check if departure from origin is in the specified hour
-            if origin['departure_hour'] == hour:
+            # Check if departure from origin is in the specified hour range
+            if origin['departure_hour'] in hour_range:
                 for j, destination in enumerate(stops_data):
                     if j > i:  # Calculate for the direction this trip is traveling
                         travel_seconds = destination['arrival_seconds'] - origin['departure_seconds']
@@ -698,11 +715,13 @@ def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_o
     canonical_station_order : list
         Pre-determined station order (list of (stop_id, stop_name) tuples).
         The stations will be displayed in this exact order.
-    hour : int, optional
-        Hour of day (0-23) to filter trips by. If provided, only trips where
-        the departure from the origin station occurs within this hour will be
-        included in the travel time calculations. If None (default), all trips
-        are included regardless of time.
+    hour : int, tuple of (int, int), or None, optional
+        Hour(s) of day to filter trips by. If provided, only trips where
+        the departure from the origin station occurs within the specified
+        hour(s) will be included in the travel time calculations.
+        - Single int (0-23): filters to that specific hour (e.g., 7 = 7:00-7:59 AM)
+        - Tuple (start, end): filters to hour range inclusive (e.g., (7, 9) = 7:00-9:59 AM)
+        - None (default): all trips are included regardless of time
 
     Returns:
     --------
@@ -731,13 +750,18 @@ def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_o
     >>> # Get combined matrix for all trips
     >>> combined = display_bidirectional_matrix(feed, route_id, service_id, filtered_order)
     >>>
-    >>> # Get combined matrix for morning rush hour (8 AM)
+    >>> # Get combined matrix for single hour (8 AM)
     >>> combined_8am = display_bidirectional_matrix(feed, route_id, service_id,
     ...                                              filtered_order, hour=8)
+    >>>
+    >>> # Get combined matrix for morning rush hour range (7-9 AM)
+    >>> combined_morning_rush = display_bidirectional_matrix(feed, route_id, service_id,
+    ...                                                       filtered_order, hour=(7, 9))
     >>>
     >>> # Export to CSV
     >>> combined.to_csv(f'{route_id}_{service_id}_travel_times.csv')
     >>> combined_8am.to_csv(f'{route_id}_{service_id}_travel_times_8am.csv')
+    >>> combined_morning_rush.to_csv(f'{route_id}_{service_id}_travel_times_7-9am.csv')
 
     # Use with print function
     >>> direction_name_0 = get_direction_name(feed, route_id, 0, service_id)
@@ -755,7 +779,8 @@ def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_o
     - The resulting matrix is symmetric in structure but not in values (travel times
       may differ between directions due to track conditions, stops, etc.)
     - When hour is specified, travel times reflect only trips departing during that
-      hour, which is useful for analyzing rush hour vs off-peak performance
+      hour or hour range, which is useful for analyzing rush hour vs off-peak performance
+    - Hour ranges are inclusive: hour=(7, 9) includes trips from 7:00-9:59 AM
 
     See Also:
     ---------
