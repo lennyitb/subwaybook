@@ -13,7 +13,7 @@ pd.set_option('display.width', None)
 pd.set_option('display.max_colwidth', None)
 
 # Load GTFS feed
-feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
 # Calculate A train travel times
 route_id = 'A'

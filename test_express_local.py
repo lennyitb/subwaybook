@@ -9,7 +9,7 @@ import pandas as pd
 
 def main():
     # Load GTFS feed
-    feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+    feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
     # Test routes
     routes = ['A', 'C', 'W']

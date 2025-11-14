@@ -9,7 +9,7 @@ import gtfs_kit as gk
 import travel_times as tt
 
 # Load GTFS feed
-feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
 route_id = 'C'
 service_id = 'Weekday'

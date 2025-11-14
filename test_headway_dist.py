@@ -10,7 +10,7 @@ import combined_headways as ch
 
 # Load GTFS feed
 print("Loading GTFS feed...")
-feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
 # Example 1: Single line - Get DataFrame and print it
 print("\n" + "=" * 100)

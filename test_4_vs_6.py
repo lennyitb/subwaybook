@@ -9,7 +9,7 @@ import gtfs_kit as gk
 import compare_lines as cl
 
 # Load GTFS feed
-feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
 # Compare 6 (local) vs 4 (express)
 difference = cl.compare_lines(

@@ -278,7 +278,7 @@ if __name__ == "__main__":
     print("="*80)
 
     # Load GTFS feed
-    feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+    feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
     # Compare C vs A
     difference = compare_lines(

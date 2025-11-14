@@ -38,7 +38,7 @@ def get_headway_dist(feed, direction_id, *route_ids, service_id='Weekday',
     -----------
     feed : gtfs_kit.Feed
         A GTFS feed object loaded with gtfs_kit. Load with:
-        feed = gk.read_feed("path/to/gtfs.zip", dist_units="m")
+        feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
     direction_id : int
         Direction ID (0 or 1). The meaning varies by route:
@@ -98,7 +98,7 @@ def get_headway_dist(feed, direction_id, *route_ids, service_id='Weekday',
     Basic usage - single route:
         >>> import gtfs_kit as gk
         >>> import combined_headways as ch
-        >>> feed = gk.read_feed("gtfs.zip", dist_units="m")
+        >>> feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
         >>> df = ch.get_headway_dist(feed, 1, '4', service_id='Weekday')
         >>> ch.print_headway_dist(df)
 
@@ -638,7 +638,7 @@ if __name__ == "__main__":
 EXAMPLE USAGE:
 
 # Load your GTFS feed
-feed = gk.read_feed("path/to/gtfs.zip", dist_units='m')
+feed = gk.read_feed("gtfs_subway.zip", dist_units='m')
 
 # Example 1: Lexington Avenue Line (4/5/6 trains)
 # Calculate combined headways for all three routes

@@ -11,7 +11,7 @@ import combined_headways as ch
 
 # Load GTFS feed
 print("Loading GTFS feed...")
-feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
 print("\n" + "=" * 100)
 print("2 and 3 Trains - Combined Headway Analysis")

@@ -10,7 +10,7 @@ import combined_headways as ch
 
 # Load GTFS feed
 print("Loading GTFS feed...")
-feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
 # Test 1: Lexington Avenue Line (4/5/6 trains)
 print("\n" + "=" * 100)

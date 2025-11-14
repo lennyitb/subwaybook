@@ -753,7 +753,7 @@ def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_o
     Examples:
     ---------
     # Calculate A train bidirectional matrix with express filtering
-    >>> feed = gk.read_feed("/path/to/gtfs_subway.zip", dist_units="m")
+    >>> feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
     >>> route_id = 'A'
     >>> service_id = 'Weekday'
     >>>
@@ -924,7 +924,7 @@ def export_travel_time_matrix_csv(matrix, route_id, direction_id, service_id, fi
 
 def main():
     # Load GTFS feed
-    feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+    feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
     # Example: A train on weekdays (multi-branch route)
     route_id = 'A'

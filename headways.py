@@ -234,7 +234,7 @@ if __name__ == "__main__":
     EXAMPLE USAGE:
     
     # Load your GTFS feed
-    feed = gk.read_feed("path/to/mta_gtfs.zip", dist_units='km')
+    feed = gk.read_feed("gtfs_subway.zip", dist_units='m')
     
     # First, check what service IDs exist for your route
     print(feed.trips[feed.trips['route_id'] == 'L']['service_id'].unique())

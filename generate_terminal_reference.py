@@ -104,7 +104,7 @@ def generate_terminal_reference(feed, service_id='Weekday', output_file='termina
 
 def main():
     # Load GTFS feed
-    feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+    feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
     # Generate reference CSV
     generate_terminal_reference(feed, service_id='Weekday', output_file='terminal_reference.csv')

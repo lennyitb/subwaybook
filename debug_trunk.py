@@ -9,7 +9,7 @@ import pandas as pd
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
 
-feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
 route_id = 'A'
 service_id = 'Weekday'

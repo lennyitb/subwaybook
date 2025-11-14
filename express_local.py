@@ -632,7 +632,7 @@ if __name__ == "__main__":
     import express_local as el
 
     # Load GTFS feed
-    feed = gk.read_feed("path/to/gtfs.zip", dist_units='m')
+    feed = gk.read_feed("gtfs_subway.zip", dist_units='m')
 
     # Create borough mapping
     stop_boroughs = el.create_stop_borough_mapping(feed)

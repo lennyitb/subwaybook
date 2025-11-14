@@ -105,7 +105,7 @@ def print_timeline_chart(route_id, direction_id, service_id, timeline, borough='
 
 def main():
     # Load GTFS feed
-    feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+    feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
     route_id = '4'
     borough = 'Manhattan'

@@ -7,7 +7,7 @@ import express_local as el
 import pandas as pd
 
 # Load GTFS feed
-feed = gk.read_feed("/Users/lennyphelan/Downloads/gtfs_subway.zip", dist_units="m")
+feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
 # Get express service summary for A train (all boroughs)
 print("="*70)
