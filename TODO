@@ -1,1 +1,6 @@
 travel time tables need to consider an hour of the day
+remove express filter from test_a_train.py
+implement headway calculations for individual branches
+build information for J Z trains
+identify part time terminals
+create frequency charts for arbitrary stretches of line

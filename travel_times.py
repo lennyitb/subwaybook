@@ -236,6 +236,61 @@ def get_station_order(feed, route_id, direction_id, service_id='Weekday'):
     return all_stops
 
 
+def get_bidirectional_station_order(feed, route_id, service_id='Weekday'):
+    """
+    Get the complete station order including stops that only serve one direction.
+    
+    This combines stations from both directions, preserving the order from
+    direction 1 (typically inbound) but adding any direction 0-only stops
+    in their proper position.
+    
+    Parameters:
+    -----------
+    feed : gtfs_kit.Feed
+        A GTFS feed object loaded with gtfs_kit
+    route_id : str
+        The route ID (e.g., 'A', 'L', '7')
+    service_id : str, default='Weekday'
+        Service ID to filter by
+    
+    Returns:
+    --------
+    list
+        Ordered list of (stop_id, stop_name) tuples including all stations
+    """
+    # Get station orders from both directions
+    order_dir0 = get_station_order(feed, route_id, 0, service_id)
+    order_dir1 = get_station_order(feed, route_id, 1, service_id)
+    
+    # Use direction 1 as base (typically has better ordering for display)
+    # but add any stations that only appear in direction 0
+    combined_order = list(order_dir1)
+    seen_stops = {stop_id for stop_id, _ in order_dir1}
+    
+    # Add direction 0-only stops in their proper position
+    for i, (stop_id, stop_name) in enumerate(order_dir0):
+        if stop_id not in seen_stops:
+            # Find where to insert this stop based on its position in dir0
+            # Insert it after the previous common stop
+            insert_pos = len(combined_order)  # Default to end
+            
+            # Look backward in dir0 to find the last common stop before this one
+            for j in range(i - 1, -1, -1):
+                prev_stop_id = order_dir0[j][0]
+                if prev_stop_id in seen_stops:
+                    # Find this stop in combined_order and insert after it
+                    for k, (comb_id, _) in enumerate(combined_order):
+                        if comb_id == prev_stop_id:
+                            insert_pos = k + 1
+                            break
+                    break
+            
+            combined_order.insert(insert_pos, (stop_id, stop_name))
+            seen_stops.add(stop_id)
+    
+    return combined_order
+
+
 def filter_station_order_express(feed, station_order, route_id, direction_id, service_id='Weekday',
                                   express_boroughs=None, all_stops_boroughs=None):
     """
@@ -695,6 +750,27 @@ def combine_bidirectional_matrix(matrix_dir0, matrix_dir1):
     pd.DataFrame
         Combined matrix with both directions
     """
+    # If one matrix is empty, return the other
+    if matrix_dir0.empty:
+        return matrix_dir1.copy()
+    if matrix_dir1.empty:
+        return matrix_dir0.copy()
+    
+    # Always check if matrices have the same stations (not just shape)
+    # This handles cases where stations differ even if dimensions match
+    stations_dir0 = set(matrix_dir0.index)
+    stations_dir1 = set(matrix_dir1.index)
+    
+    if stations_dir0 != stations_dir1:
+        # Reindex both to have the same index and columns (union of both)
+        # Preserve order from matrix_dir0, then add any new stations from matrix_dir1
+        all_stations = list(matrix_dir0.index)
+        for station in matrix_dir1.index:
+            if station not in all_stations:
+                all_stations.append(station)
+        matrix_dir0 = matrix_dir0.reindex(index=all_stations, columns=all_stations)
+        matrix_dir1 = matrix_dir1.reindex(index=all_stations, columns=all_stations)
+    
     # Start with a copy of direction 0
     combined = matrix_dir0.copy()
 
