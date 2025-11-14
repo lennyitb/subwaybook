@@ -183,39 +183,40 @@ def get_station_order(feed, route_id, direction_id, service_id='Weekday'):
         return station_order
 
     # Multi-branch route
-    # Get the trunk (common part) - use first branch's trip up to branch point
-    first_branch_terminal = branches_info[0]['terminal_id']
-    terminals = stop_times.groupby('trip_id').last().reset_index()
-    sample_trip_id = terminals[terminals['stop_id'] == first_branch_terminal]['trip_id'].iloc[0]
-    sample_trip_stops = stop_times[stop_times['trip_id'] == sample_trip_id].sort_values('stop_sequence')
+    # Strategy: Add trunk first, then add branches in order:
+    # full-time branches (shortest to longest), then part-time branches
 
-    trunk_stops = []
-    if branch_point:
-        trunk_stops = sample_trip_stops[sample_trip_stops['stop_id'] != branch_point]['stop_id'].tolist()
-        # Include branch point in trunk
-        branch_point_seq = sample_trip_stops[sample_trip_stops['stop_id'] == branch_point]
-        if not branch_point_seq.empty:
-            trunk_stops = sample_trip_stops[
-                sample_trip_stops['stop_sequence'] <= branch_point_seq.iloc[0]['stop_sequence']
-            ]['stop_id'].tolist()
+    terminals = stop_times.groupby('trip_id').last().reset_index()
 
     # Build complete station list
     all_stops = []
     seen_stops = set()
 
-    # Add trunk stops
-    for stop_id in trunk_stops:
-        normalized_id = normalize_stop_id(feed, stop_id)
-        if normalized_id not in seen_stops:
-            stop_name = feed.stops[feed.stops['stop_id'] == normalized_id]['stop_name'].values
-            if len(stop_name) > 0:
-                all_stops.append((normalized_id, stop_name[0]))
-                seen_stops.add(normalized_id)
+    # First, add the trunk stops (common to all branches)
+    # Find the branch point and use any trip to get trunk stops
+    if branch_point:
+        # Get a sample trip to extract trunk stops
+        sample_trip_id = terminals['trip_id'].iloc[0]
+        sample_trip_stops = stop_times[stop_times['trip_id'] == sample_trip_id].sort_values('stop_sequence')
 
-    # Add each branch
+        # Add trunk stops up to and including the branch point
+        for _, row in sample_trip_stops.iterrows():
+            normalized_id = normalize_stop_id(feed, row['stop_id'])
+            if normalized_id not in seen_stops:
+                stop_name = feed.stops[feed.stops['stop_id'] == normalized_id]['stop_name'].values
+                if len(stop_name) > 0:
+                    all_stops.append((normalized_id, stop_name[0]))
+                    seen_stops.add(normalized_id)
+
+            # Stop after branch point
+            if normalize_stop_id(feed, row['stop_id']) == normalize_stop_id(feed, branch_point):
+                break
+
+    # Now add stops from each branch in order:
+    # branches_info is already sorted by: trip_count desc, then stop_count asc
+    # This means full-time branches (by ascending length) come first, then part-time
     for branch in branches_info:
         # Get a trip to this terminal with the most stops
-        terminals = stop_times.groupby('trip_id').last().reset_index()
         branch_trip_ids = terminals[terminals['stop_id'] == branch['terminal_id']]['trip_id'].tolist()
         branch_stop_times = stop_times[stop_times['trip_id'].isin(branch_trip_ids)]
         branch_stop_counts = branch_stop_times.groupby('trip_id').size()
@@ -223,7 +224,7 @@ def get_station_order(feed, route_id, direction_id, service_id='Weekday'):
 
         branch_stops = stop_times[stop_times['trip_id'] == branch_max_trip].sort_values('stop_sequence')
 
-        # Add stops after the branch point
+        # Add all stops from this branch (only new stops after branch point)
         for stop_id in branch_stops['stop_id']:
             normalized_id = normalize_stop_id(feed, stop_id)
             if normalized_id not in seen_stops:
@@ -555,6 +556,96 @@ def combine_bidirectional_matrix(matrix_dir0, matrix_dir1):
         for j in range(len(combined.columns)):
             if pd.isna(combined.iloc[i, j]) and pd.notna(matrix_dir1.iloc[i, j]):
                 combined.iloc[i, j] = matrix_dir1.iloc[i, j]
+
+    return combined
+
+
+def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_order):
+    """
+    Calculate and combine bidirectional travel time matrices.
+
+    This is a convenience function that:
+    1. Calculates travel time matrices for both directions (0 and 1)
+    2. Combines them into a single bidirectional matrix
+
+    The result is a matrix where:
+    - Stations are ordered according to the provided canonical_station_order
+    - Upper triangle shows direction 0 travel times
+    - Lower triangle shows direction 1 travel times
+    - Diagonal shows 0 (same station)
+
+    Parameters:
+    -----------
+    feed : gtfs_kit.Feed
+        A GTFS feed object loaded with gtfs_kit
+    route_id : str
+        The route ID (e.g., 'A', 'L', '7')
+    service_id : str
+        Service ID to filter by (e.g., 'Weekday', 'Saturday', 'Sunday')
+    canonical_station_order : list
+        Pre-determined station order (list of (stop_id, stop_name) tuples).
+        The stations will be displayed in this exact order.
+
+    Returns:
+    --------
+    pd.DataFrame
+        Combined bidirectional travel time matrix.
+        Values are travel times in minutes (float).
+        Station names appear as both row and column indices.
+
+    Examples:
+    ---------
+    # Calculate A train bidirectional matrix with express filtering
+    >>> feed = gk.read_feed("/path/to/gtfs_subway.zip", dist_units="m")
+    >>> route_id = 'A'
+    >>> service_id = 'Weekday'
+    >>>
+    >>> # Get station order (use direction 1 for desired branch ordering)
+    >>> canonical_order = get_station_order(feed, route_id, 1, service_id)
+    >>>
+    >>> # Filter to express stops
+    >>> filtered_order = filter_station_order_express(
+    ...     feed, canonical_order, route_id, 0, service_id,
+    ...     express_boroughs=['Manhattan', 'Brooklyn'],
+    ...     all_stops_boroughs=['Queens']
+    ... )
+    >>>
+    >>> # Get combined matrix
+    >>> combined = display_bidirectional_matrix(feed, route_id, service_id, filtered_order)
+    >>>
+    >>> # Export to CSV
+    >>> combined.to_csv(f'{route_id}_{service_id}_travel_times.csv')
+
+    # Use with print function
+    >>> direction_name_0 = get_direction_name(feed, route_id, 0, service_id)
+    >>> direction_name_1 = get_direction_name(feed, route_id, 1, service_id)
+    >>> print_combined_travel_time_matrix(combined, route_id, service_id,
+    ...                                   direction_name_0, direction_name_1)
+
+    Notes:
+    ------
+    - The canonical_station_order can come from either direction
+    - For branched routes, use direction 1 to get the correct branch ordering
+      (shortest full-time branch first, then longer branches, then part-time branches)
+    - For filtered station orders, use filter_station_order_express() to focus on
+      specific stops
+    - The resulting matrix is symmetric in structure but not in values (travel times
+      may differ between directions due to track conditions, stops, etc.)
+
+    See Also:
+    ---------
+    get_station_order : Get canonical station ordering for a route
+    filter_station_order_express : Filter stations to express stops only
+    calculate_travel_time_matrix : Calculate single-direction travel time matrix
+    combine_bidirectional_matrix : Combine two directional matrices
+    print_combined_travel_time_matrix : Print formatted bidirectional matrix
+    """
+    # Calculate matrices for both directions using the provided order
+    matrix_dir0 = calculate_travel_time_matrix(feed, route_id, 0, service_id, canonical_station_order)
+    matrix_dir1 = calculate_travel_time_matrix(feed, route_id, 1, service_id, canonical_station_order)
+
+    # Combine the matrices
+    combined = combine_bidirectional_matrix(matrix_dir0, matrix_dir1)
 
     return combined
 
