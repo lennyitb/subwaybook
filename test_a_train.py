@@ -30,7 +30,8 @@ filtered_order = tt.filter_station_order_express(
 )
 
 # Calculate and combine bidirectional matrix (inverted station order)
-combined = tt.display_bidirectional_matrix(feed, route_id, service_id, filtered_order)
+# Filter to 7-9 AM hour range for morning rush hour analysis
+combined = tt.display_bidirectional_matrix(feed, route_id, service_id, filtered_order, hour=(7, 9))
 
 # Get direction names
 direction_name_0 = tt.get_direction_name(feed, route_id, 0, service_id)
