@@ -235,6 +235,94 @@ def get_station_order(feed, route_id, direction_id, service_id='Weekday'):
     return all_stops
 
 
+def filter_station_order_express(feed, station_order, route_id, direction_id, service_id='Weekday',
+                                  express_boroughs=None, all_stops_boroughs=None):
+    """
+    Filter station order to show only express stops in certain boroughs.
+
+    Parameters:
+    -----------
+    feed : gtfs_kit.Feed
+        A GTFS feed object loaded with gtfs_kit
+    station_order : list
+        Full station order from get_station_order()
+    route_id : str
+        The route ID
+    direction_id : int
+        Direction ID (0 or 1)
+    service_id : str, default='Weekday'
+        Service ID to filter by
+    express_boroughs : list, optional
+        List of borough names where only express stops should be shown
+        (e.g., ['Manhattan', 'Brooklyn'])
+    all_stops_boroughs : list, optional
+        List of borough names where all stops should be shown
+        (e.g., ['Queens'])
+
+    Returns:
+    --------
+    list
+        Filtered station order (stop_id, stop_name) tuples
+    """
+    if not express_boroughs:
+        return station_order
+
+    # Import express_local module to get borough mapping
+    import express_local as el
+
+    # Create borough mapping
+    stop_boroughs = el.create_stop_borough_mapping(feed)
+    stop_borough_map = dict(zip(stop_boroughs['stop_id'], stop_boroughs['borough']))
+
+    # Get express/local classification for this route
+    patterns = el.analyze_route_express_patterns(feed, route_id, direction_id, service_id)
+
+    if patterns.empty:
+        return station_order
+
+    # Find which stops have express service
+    express_stops = set()
+
+    for _, row in patterns.iterrows():
+        trip_id = row['trip_id']
+
+        # Check if this trip runs express in any of the express_boroughs
+        is_express_trip = False
+        for borough in express_boroughs:
+            if borough in row and row[borough] == 'express':
+                is_express_trip = True
+                break
+
+        if is_express_trip:
+            # Get stops for this express trip
+            stop_times = feed.stop_times[feed.stop_times['trip_id'] == trip_id]
+            for stop_id in stop_times['stop_id']:
+                normalized_stop_id = normalize_stop_id(feed, stop_id)
+                express_stops.add(normalized_stop_id)
+
+    # Filter station order
+    filtered_order = []
+    for stop_id, stop_name in station_order:
+        borough = stop_borough_map.get(stop_id)
+
+        # Include if:
+        # 1. In all_stops_boroughs (show all stops), OR
+        # 2. In express_boroughs AND is an express stop, OR
+        # 3. Not in any specified borough (include by default)
+        if all_stops_boroughs and borough in all_stops_boroughs:
+            # Always include stops in all_stops_boroughs
+            filtered_order.append((stop_id, stop_name))
+        elif express_boroughs and borough in express_boroughs:
+            # Only include if it's an express stop
+            if stop_id in express_stops:
+                filtered_order.append((stop_id, stop_name))
+        elif borough not in (express_boroughs or []) and borough not in (all_stops_boroughs or []):
+            # Not in any specified borough - include by default
+            filtered_order.append((stop_id, stop_name))
+
+    return filtered_order
+
+
 def calculate_travel_time_matrix(feed, route_id, direction_id, service_id='Weekday', canonical_station_order=None):
     """
     Calculate a travel time matrix for a route.
@@ -333,7 +421,9 @@ def calculate_travel_time_matrix(feed, route_id, direction_id, service_id='Weekd
                     matrix_data[i][j] = np.mean(travel_times[pair_key])
 
     # Create DataFrame with station names as indices
+    # Transpose so columns = departure points, rows = destinations
     df = pd.DataFrame(matrix_data, index=stop_names, columns=stop_names)
+    df = df.T
 
     return df
 
@@ -437,15 +527,17 @@ def combine_bidirectional_matrix(matrix_dir0, matrix_dir1):
     """
     Combine two directional travel time matrices into one.
 
-    The upper triangle shows direction 0 times, lower triangle shows direction 1 times.
+    After transposing (columns=origins, rows=destinations):
+    - Upper triangle (j > i): direction 0 times
+    - Lower triangle (j < i): direction 1 times
     Both matrices must have the same stations in the same order.
 
     Parameters:
     -----------
     matrix_dir0 : pd.DataFrame
-        Travel time matrix for direction 0
+        Travel time matrix for direction 0 (transposed: columns=origins, rows=destinations)
     matrix_dir1 : pd.DataFrame
-        Travel time matrix for direction 1
+        Travel time matrix for direction 1 (transposed: columns=origins, rows=destinations)
 
     Returns:
     --------
@@ -455,12 +547,14 @@ def combine_bidirectional_matrix(matrix_dir0, matrix_dir1):
     # Start with a copy of direction 0
     combined = matrix_dir0.copy()
 
-    # Fill the lower triangle with direction 1 data
+    # After transpose:
+    # - Direction 0 originally had lower triangle → now has UPPER triangle
+    # - Direction 1 originally had upper triangle → now has LOWER triangle
+    # So we just need to fill in NaN values from direction 1
     for i in range(len(combined)):
-        for j in range(i):
-            # Lower triangle: use direction 1 data directly
-            # Direction 1 matrix already has the travel times in the opposite direction
-            combined.iloc[i, j] = matrix_dir1.iloc[i, j]
+        for j in range(len(combined.columns)):
+            if pd.isna(combined.iloc[i, j]) and pd.notna(matrix_dir1.iloc[i, j]):
+                combined.iloc[i, j] = matrix_dir1.iloc[i, j]
 
     return combined
 
@@ -585,24 +679,36 @@ def main():
     # Get canonical station order (use direction 0's ordering for both directions)
     canonical_order = get_station_order(feed, route_id, 0, service_id)
 
-    # Calculate matrices for both directions using the same canonical station order
-    matrix_dir0 = calculate_travel_time_matrix(feed, route_id, 0, service_id, canonical_order)
-    matrix_dir1 = calculate_travel_time_matrix(feed, route_id, 1, service_id, canonical_order)
+    # Create filtered version: express stops only in Manhattan/Brooklyn, all stops in Queens
+    print("\nGenerating FILTERED matrix (express stops in Manhattan/Brooklyn, all stops in Queens)...")
+    print("="*80)
 
-    if not matrix_dir0.empty and not matrix_dir1.empty:
+    filtered_order = filter_station_order_express(
+        feed, canonical_order, route_id, 0, service_id,
+        express_boroughs=['Manhattan', 'Brooklyn'],
+        all_stops_boroughs=['Queens']
+    )
+
+    print(f"\nFiltered from {len(canonical_order)} stations to {len(filtered_order)} stations")
+
+    # Calculate matrices for both directions using the filtered station order
+    matrix_dir0_filtered = calculate_travel_time_matrix(feed, route_id, 0, service_id, filtered_order)
+    matrix_dir1_filtered = calculate_travel_time_matrix(feed, route_id, 1, service_id, filtered_order)
+
+    if not matrix_dir0_filtered.empty and not matrix_dir1_filtered.empty:
         # Get direction names
         direction_name_0 = get_direction_name(feed, route_id, 0, service_id)
         direction_name_1 = get_direction_name(feed, route_id, 1, service_id)
 
         # Combine the matrices
-        combined_matrix = combine_bidirectional_matrix(matrix_dir0, matrix_dir1)
+        combined_matrix_filtered = combine_bidirectional_matrix(matrix_dir0_filtered, matrix_dir1_filtered)
 
         # Print combined matrix
-        print_combined_travel_time_matrix(combined_matrix, route_id, service_id,
+        print_combined_travel_time_matrix(combined_matrix_filtered, route_id, service_id,
                                          direction_name_0, direction_name_1)
 
         # Optionally export to CSV
-        # combined_matrix.to_csv(f'{route_id}_{service_id}_combined_travel_times.csv')
+        # combined_matrix_filtered.to_csv(f'{route_id}_{service_id}_express_travel_times.csv')
     else:
         print(f"Could not generate travel time matrix for {route_id} train")
 
