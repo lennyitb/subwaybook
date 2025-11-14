@@ -673,7 +673,7 @@ def combine_bidirectional_matrix(matrix_dir0, matrix_dir1):
     return combined
 
 
-def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_order):
+def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_order, hour=None):
     """
     Calculate and combine bidirectional travel time matrices.
 
@@ -698,6 +698,11 @@ def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_o
     canonical_station_order : list
         Pre-determined station order (list of (stop_id, stop_name) tuples).
         The stations will be displayed in this exact order.
+    hour : int, optional
+        Hour of day (0-23) to filter trips by. If provided, only trips where
+        the departure from the origin station occurs within this hour will be
+        included in the travel time calculations. If None (default), all trips
+        are included regardless of time.
 
     Returns:
     --------
@@ -723,11 +728,16 @@ def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_o
     ...     all_stops_boroughs=['Queens']
     ... )
     >>>
-    >>> # Get combined matrix
+    >>> # Get combined matrix for all trips
     >>> combined = display_bidirectional_matrix(feed, route_id, service_id, filtered_order)
+    >>>
+    >>> # Get combined matrix for morning rush hour (8 AM)
+    >>> combined_8am = display_bidirectional_matrix(feed, route_id, service_id,
+    ...                                              filtered_order, hour=8)
     >>>
     >>> # Export to CSV
     >>> combined.to_csv(f'{route_id}_{service_id}_travel_times.csv')
+    >>> combined_8am.to_csv(f'{route_id}_{service_id}_travel_times_8am.csv')
 
     # Use with print function
     >>> direction_name_0 = get_direction_name(feed, route_id, 0, service_id)
@@ -744,18 +754,26 @@ def display_bidirectional_matrix(feed, route_id, service_id, canonical_station_o
       specific stops
     - The resulting matrix is symmetric in structure but not in values (travel times
       may differ between directions due to track conditions, stops, etc.)
+    - When hour is specified, travel times reflect only trips departing during that
+      hour, which is useful for analyzing rush hour vs off-peak performance
 
     See Also:
     ---------
     get_station_order : Get canonical station ordering for a route
     filter_station_order_express : Filter stations to express stops only
-    calculate_travel_time_matrix : Calculate single-direction travel time matrix
+    calculate_travel_time_matrix : Calculate single-direction travel time matrix (all trips)
+    calculate_travel_time_matrix_by_hour : Calculate single-direction matrix filtered by hour
     combine_bidirectional_matrix : Combine two directional matrices
     print_combined_travel_time_matrix : Print formatted bidirectional matrix
     """
     # Calculate matrices for both directions using the provided order
-    matrix_dir0 = calculate_travel_time_matrix(feed, route_id, 0, service_id, canonical_station_order)
-    matrix_dir1 = calculate_travel_time_matrix(feed, route_id, 1, service_id, canonical_station_order)
+    # Use hour-filtered function if hour is specified, otherwise use standard function
+    if hour is not None:
+        matrix_dir0 = calculate_travel_time_matrix_by_hour(feed, route_id, 0, hour, service_id, canonical_station_order)
+        matrix_dir1 = calculate_travel_time_matrix_by_hour(feed, route_id, 1, hour, service_id, canonical_station_order)
+    else:
+        matrix_dir0 = calculate_travel_time_matrix(feed, route_id, 0, service_id, canonical_station_order)
+        matrix_dir1 = calculate_travel_time_matrix(feed, route_id, 1, service_id, canonical_station_order)
 
     # Combine the matrices
     combined = combine_bidirectional_matrix(matrix_dir0, matrix_dir1)
