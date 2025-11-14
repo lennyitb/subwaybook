@@ -538,11 +538,31 @@ def calculate_travel_time_matrix_by_hour(feed, route_id, direction_id, hour, ser
                         pair_key = (origin['stop_id'], destination['stop_id'])
                         travel_times[pair_key].append(travel_minutes)
 
-    # Calculate average travel times
-    matrix_data = np.full((len(stop_ids), len(stop_ids)), np.nan)
+    # Identify stations that actually have data during this hour
+    # A station should be included if it appears in any travel time pair
+    stations_with_data = set()
+    for (origin_id, dest_id) in travel_times.keys():
+        if travel_times[(origin_id, dest_id)]:  # Only if there's actual data
+            stations_with_data.add(origin_id)
+            stations_with_data.add(dest_id)
 
-    for i, origin_id in enumerate(stop_ids):
-        for j, dest_id in enumerate(stop_ids):
+    # Filter station lists to only include stations with data
+    filtered_stop_ids = []
+    filtered_stop_names = []
+    for stop_id, stop_name in zip(stop_ids, stop_names):
+        if stop_id in stations_with_data:
+            filtered_stop_ids.append(stop_id)
+            filtered_stop_names.append(stop_name)
+
+    # If no stations have data during this hour, return empty DataFrame
+    if not filtered_stop_ids:
+        return pd.DataFrame()
+
+    # Calculate average travel times
+    matrix_data = np.full((len(filtered_stop_ids), len(filtered_stop_ids)), np.nan)
+
+    for i, origin_id in enumerate(filtered_stop_ids):
+        for j, dest_id in enumerate(filtered_stop_ids):
             if i == j:
                 matrix_data[i][j] = 0  # Same station = 0 minutes
             else:
@@ -553,7 +573,7 @@ def calculate_travel_time_matrix_by_hour(feed, route_id, direction_id, hour, ser
 
     # Create DataFrame with station names as indices
     # Transpose so columns = departure points, rows = destinations
-    df = pd.DataFrame(matrix_data, index=stop_names, columns=stop_names)
+    df = pd.DataFrame(matrix_data, index=filtered_stop_names, columns=filtered_stop_names)
     df = df.T
 
     return df
