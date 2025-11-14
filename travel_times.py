@@ -336,25 +336,46 @@ def filter_station_order_express(feed, station_order, route_id, direction_id, se
     if patterns.empty:
         return station_order
 
-    # Find which stops have express service
+    # Count how many trips stop at each station
+    # A stop is only "express" if a significant percentage of trips stop there
+    # This filters out late-night/off-peak local stops on otherwise express routes
+    #
+    # NOTE: This frequency-based approach was added to fix an issue where Liberty Av,
+    # Van Siclen Av, and Shepherd Av were incorrectly classified as express stops.
+    # The root cause was actually incorrect borough polygon boundaries in express_local.py.
+    # After fixing the polygons (extending Brooklyn to include these stations), this
+    # threshold may no longer be necessary and could potentially cause issues by
+    # excluding legitimate express stops that have <50% service coverage due to branches
+    # or service patterns. Consider removing this threshold or making it configurable
+    # if it causes problems in the future.
+    from collections import defaultdict
+
+    # Get all trips for this route/direction/service
+    trips_for_route = feed.trips[
+        (feed.trips['route_id'] == route_id) &
+        (feed.trips['direction_id'] == direction_id) &
+        (feed.trips['service_id'] == service_id)
+    ]
+    total_trips = len(trips_for_route)
+    trip_ids = set(trips_for_route['trip_id'])
+
+    # Count trips per stop
+    stop_trip_counts = defaultdict(int)
+    stop_times = feed.stop_times[feed.stop_times['trip_id'].isin(trip_ids)]
+
+    for stop_id in stop_times['stop_id']:
+        normalized_stop_id = normalize_stop_id(feed, stop_id)
+        stop_trip_counts[normalized_stop_id] += 1
+
+    # A stop is considered "express" if at least 50% of trips stop there
+    # This threshold filters out stations like Liberty Av (14%) while keeping
+    # true express stops like 59 St (90%)
+    EXPRESS_THRESHOLD = 0.5
     express_stops = set()
 
-    for _, row in patterns.iterrows():
-        trip_id = row['trip_id']
-
-        # Check if this trip runs express in any of the express_boroughs
-        is_express_trip = False
-        for borough in express_boroughs:
-            if borough in row and row[borough] == 'express':
-                is_express_trip = True
-                break
-
-        if is_express_trip:
-            # Get stops for this express trip
-            stop_times = feed.stop_times[feed.stop_times['trip_id'] == trip_id]
-            for stop_id in stop_times['stop_id']:
-                normalized_stop_id = normalize_stop_id(feed, stop_id)
-                express_stops.add(normalized_stop_id)
+    for stop_id, count in stop_trip_counts.items():
+        if count / total_trips >= EXPRESS_THRESHOLD:
+            express_stops.add(stop_id)
 
     # Filter station order
     filtered_order = []

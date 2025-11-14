@@ -68,7 +68,7 @@ def get_shared_express_stops(feed, local_route, express_route, direction_id=1, s
 
 def calculate_travel_time_difference(feed, local_route, express_route,
                                      direction_id=1, service_id='Weekday',
-                                     shared_stops=None):
+                                     shared_stops=None, hour_range=None):
     """
     Calculate the travel time difference between local and express routes.
 
@@ -89,6 +89,11 @@ def calculate_travel_time_difference(feed, local_route, express_route,
         Service ID to filter by
     shared_stops : list, optional
         Pre-computed list of shared stops. If None, will be calculated.
+    hour_range : int or tuple of (int, int), optional
+        Hour(s) to filter by. Can be:
+        - Single int (0-23): specific hour (e.g., 7 = 7:00-7:59 AM)
+        - Tuple (start, end): hour range inclusive (e.g., (7, 9) = 7:00-9:59 AM)
+        - None (default): all hours
 
     Returns:
     --------
@@ -101,15 +106,34 @@ def calculate_travel_time_difference(feed, local_route, express_route,
             feed, local_route, express_route, direction_id, service_id
         )
 
-    # Calculate local train matrices
-    local_dir0 = tt.calculate_travel_time_matrix(feed, local_route, 0, service_id, shared_stops)
-    local_dir1 = tt.calculate_travel_time_matrix(feed, local_route, 1, service_id, shared_stops)
-    local_combined = tt.combine_bidirectional_matrix(local_dir0, local_dir1)
+    # Calculate matrices based on whether hour_range is specified
+    if hour_range is not None:
+        # Use hour-filtered matrices
+        local_dir0 = tt.calculate_travel_time_matrix_by_hour(feed, local_route, 0, hour_range, service_id, shared_stops)
+        local_dir1 = tt.calculate_travel_time_matrix_by_hour(feed, local_route, 1, hour_range, service_id, shared_stops)
+        local_combined = tt.combine_bidirectional_matrix(local_dir0, local_dir1)
 
-    # Calculate express train matrices
-    express_dir0 = tt.calculate_travel_time_matrix(feed, express_route, 0, service_id, shared_stops)
-    express_dir1 = tt.calculate_travel_time_matrix(feed, express_route, 1, service_id, shared_stops)
-    express_combined = tt.combine_bidirectional_matrix(express_dir0, express_dir1)
+        express_dir0 = tt.calculate_travel_time_matrix_by_hour(feed, express_route, 0, hour_range, service_id, shared_stops)
+        express_dir1 = tt.calculate_travel_time_matrix_by_hour(feed, express_route, 1, hour_range, service_id, shared_stops)
+        express_combined = tt.combine_bidirectional_matrix(express_dir0, express_dir1)
+    else:
+        # Use all-hours matrices
+        local_dir0 = tt.calculate_travel_time_matrix(feed, local_route, 0, service_id, shared_stops)
+        local_dir1 = tt.calculate_travel_time_matrix(feed, local_route, 1, service_id, shared_stops)
+        local_combined = tt.combine_bidirectional_matrix(local_dir0, local_dir1)
+
+        express_dir0 = tt.calculate_travel_time_matrix(feed, express_route, 0, service_id, shared_stops)
+        express_dir1 = tt.calculate_travel_time_matrix(feed, express_route, 1, service_id, shared_stops)
+        express_combined = tt.combine_bidirectional_matrix(express_dir0, express_dir1)
+
+    # Ensure both matrices have the same index/columns in the correct order
+    # Use the shared_stops order to enforce proper station ordering
+    station_names = [name for _, name in shared_stops]
+
+    # Reindex both matrices to match shared_stops order
+    # This prevents alphabetical sorting and filters out non-shared stops
+    local_combined = local_combined.reindex(index=station_names, columns=station_names)
+    express_combined = express_combined.reindex(index=station_names, columns=station_names)
 
     # Calculate difference: local - express
     # Positive values mean express is faster
@@ -118,7 +142,7 @@ def calculate_travel_time_difference(feed, local_route, express_route,
     return difference
 
 
-def print_comparison_summary(difference_matrix, local_route, express_route, service_id='Weekday'):
+def print_comparison_summary(difference_matrix, local_route, express_route, service_id='Weekday', hour_range=None):
     """
     Print a summary of the travel time comparison.
 
@@ -132,10 +156,17 @@ def print_comparison_summary(difference_matrix, local_route, express_route, serv
         Route ID for the express train
     service_id : str, default='Weekday'
         Service ID
+    hour_range : int or tuple, optional
+        Hour range that was used for filtering
     """
     print("="*80)
     print(f"{local_route} Train vs {express_route} Train - Travel Time Difference")
     print(f"{service_id}")
+    if hour_range is not None:
+        if isinstance(hour_range, tuple):
+            print(f"Hours: {hour_range[0]}:00 - {hour_range[1]}:59")
+        else:
+            print(f"Hour: {hour_range}:00 - {hour_range}:59")
     print("="*80)
     print()
     print(f"Positive values = {express_route} train is FASTER (saves time)")
@@ -181,7 +212,7 @@ def print_comparison_summary(difference_matrix, local_route, express_route, serv
 
 
 def export_comparison(difference_matrix, local_route, express_route, service_id='Weekday',
-                     output_dir='.'):
+                     hour_range=None, output_dir='.'):
     """
     Export the comparison matrix to CSV.
 
@@ -195,6 +226,8 @@ def export_comparison(difference_matrix, local_route, express_route, service_id=
         Route ID for the express train
     service_id : str, default='Weekday'
         Service ID
+    hour_range : int or tuple, optional
+        Hour range that was used for filtering
     output_dir : str, default='.'
         Directory to save the CSV file
 
@@ -204,14 +237,24 @@ def export_comparison(difference_matrix, local_route, express_route, service_id=
         Path to the exported CSV file
     """
     import os
-    filename = f'{local_route}_vs_{express_route}_difference_{service_id}.csv'
+
+    # Build filename with hour range if specified
+    if hour_range is not None:
+        if isinstance(hour_range, tuple):
+            hour_str = f'_hours_{hour_range[0]}-{hour_range[1]}'
+        else:
+            hour_str = f'_hour_{hour_range}'
+    else:
+        hour_str = ''
+
+    filename = f'{local_route}_vs_{express_route}_difference_{service_id}{hour_str}.csv'
     filepath = os.path.join(output_dir, filename)
     difference_matrix.to_csv(filepath)
     return filepath
 
 
 def compare_lines(feed, local_route, express_route, direction_id=1,
-                 service_id='Weekday', export=True, verbose=True):
+                 service_id='Weekday', hour_range=None, export=True, verbose=True):
     """
     Complete workflow to compare local and express train travel times.
 
@@ -228,6 +271,11 @@ def compare_lines(feed, local_route, express_route, direction_id=1,
         will be last in the list)
     service_id : str, default='Weekday'
         Service ID to filter by
+    hour_range : int or tuple of (int, int), optional
+        Hour(s) to filter by. Can be:
+        - Single int (0-23): specific hour (e.g., 7 = 7:00-7:59 AM)
+        - Tuple (start, end): hour range inclusive (e.g., (7, 9) = 7:00-9:59 AM)
+        - None (default): all hours
     export : bool, default=True
         Whether to export results to CSV
     verbose : bool, default=True
@@ -237,9 +285,25 @@ def compare_lines(feed, local_route, express_route, direction_id=1,
     --------
     pd.DataFrame
         The travel time difference matrix
+
+    Examples:
+    ---------
+    All hours:
+        >>> diff = compare_lines(feed, 'C', 'A')
+
+    Morning rush only (7-9 AM):
+        >>> diff = compare_lines(feed, 'C', 'A', hour_range=(7, 9))
+
+    Specific hour (8 AM):
+        >>> diff = compare_lines(feed, 'C', 'A', hour_range=8)
     """
     if verbose:
         print(f"Comparing {local_route} vs {express_route} trains")
+        if hour_range:
+            if isinstance(hour_range, tuple):
+                print(f"Hour range: {hour_range[0]}:00 - {hour_range[1]}:59")
+            else:
+                print(f"Hour: {hour_range}:00 - {hour_range}:59")
         print("="*80)
 
     # Get shared express stops
@@ -257,14 +321,14 @@ def compare_lines(feed, local_route, express_route, direction_id=1,
 
     # Calculate difference matrix
     difference_matrix = calculate_travel_time_difference(
-        feed, local_route, express_route, direction_id, service_id, shared_stops
+        feed, local_route, express_route, direction_id, service_id, shared_stops, hour_range
     )
 
     if verbose:
-        print_comparison_summary(difference_matrix, local_route, express_route, service_id)
+        print_comparison_summary(difference_matrix, local_route, express_route, service_id, hour_range)
 
     if export:
-        filepath = export_comparison(difference_matrix, local_route, express_route, service_id)
+        filepath = export_comparison(difference_matrix, local_route, express_route, service_id, hour_range)
         if verbose:
             print(f"\nExported to {filepath}")
 

@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """
-Module for calculating combined headways when multiple services share a corridor.
+Module for calculating combined headways when multiple services share a corridor,
+and analyzing headways for specific branches of multi-branch routes.
 
 When multiple subway lines serve the same stops, passengers can take any of them,
 so the effective headway is shorter than any individual line's headway. This module
 calculates the combined headway - the time between ANY train arriving at a stop,
 regardless of which route it is.
 
+Additionally, for routes that split into multiple branches (like the A train to
+Lefferts vs Far Rockaway, or the 5 train to different terminals), this module
+provides functions to analyze service patterns on individual branches.
+
 Use cases:
-- Lexington Avenue Line (4/5/6 trains)
-- 8th Avenue Line in Manhattan (A/C/E trains)
-- Queens Boulevard (E/F/M/R trains)
+- Combined corridor service:
+  * Lexington Avenue Line (4/5/6 trains)
+  * 8th Avenue Line in Manhattan (A/C/E trains)
+  * Queens Boulevard (E/F/M/R trains)
+- Branch-specific analysis:
+  * A train: Lefferts Blvd vs Far Rockaway vs Rockaway Park
+  * 5 train: Different terminal branches
+  * D train: Different terminal options
 """
 import gtfs_kit as gk
 import pandas as pd
@@ -262,20 +272,46 @@ def print_headway_dist(df):
     """
     # Get metadata from DataFrame attributes
     route_list = df.attrs.get('route_ids', [])
+    route_specs = df.attrs.get('route_specs', [])
+    route_id = df.attrs.get('route_id', None)
     direction_id = df.attrs.get('direction_id', None)
     direction_name = df.attrs.get('direction_name', '')
     service_id = df.attrs.get('service_id', '')
+    branch_terminal = df.attrs.get('branch_terminal', None)
+    branch_end_desc = df.attrs.get('branch_end_description', 'to')
+    hour_range = df.attrs.get('hour_range', None)
 
     # Format route string for display
-    if len(route_list) == 1:
-        route_str = f"Route {route_list[0]}"
+    if route_specs:
+        # From get_headway_dist_combined
+        if len(route_specs) == 1:
+            route_str = f"Route {route_specs[0]}"
+        else:
+            route_str = f"Routes {', '.join(route_specs)}"
+    elif route_list:
+        # Multiple routes (from get_headway_dist)
+        if len(route_list) == 1:
+            route_str = f"Route {route_list[0]}"
+        else:
+            route_str = f"Routes {'/'.join(route_list)}"
+    elif route_id:
+        # Single route, possibly branch-specific (from get_headway_dist_branch)
+        route_str = f"Route {route_id}"
+        if branch_terminal:
+            # Use proper description: "from X" or "to X" based on branch location
+            if branch_end_desc == "originates from":
+                route_str += f" from {branch_terminal}"
+            else:
+                route_str += f" to {branch_terminal}"
     else:
-        route_str = f"Routes {'/'.join(route_list)}"
+        route_str = "Unknown Route"
 
     # Print header
     print(f"\nHeadway Distribution - {route_str}")
     print(f"Direction: {direction_id} ({direction_name})")
     print(f"Service: {service_id}")
+    if hour_range:
+        print(f"Hours: {hour_range[0]}:00 - {hour_range[1]}:00")
     print("=" * 70)
     print(f"{'Hour':<6} {'# Trains':<12} {'Avg (min)':<12} {'Min (min)':<12} {'Max (min)':<12}")
     print("-" * 70)
@@ -292,6 +328,639 @@ def print_headway_dist(df):
             print(f"{hour:02d}:00  {num_trains:<12} {avg_hw:<12.2f} {min_hw:<12.2f} {max_hw:<12.2f}")
         else:
             print(f"{hour:02d}:00  {num_trains:<12} {'-':<12} {'-':<12} {'-':<12}")
+
+
+def get_headway_dist_branch(feed, route_id, direction_id, branch_terminal,
+                            service_id='Weekday', stop_id=None, exclude_first_last=True):
+    """
+    Get headway distribution DataFrame for a specific branch of a multi-branch route.
+
+    This function is complementary to get_headway_dist() but specifically designed for
+    analyzing individual branches of routes that split into multiple terminals (e.g.,
+    the A train to Lefferts vs Far Rockaway, or the 5 train to different terminals).
+
+    Unlike get_headway_dist() which combines all services on specified routes, this
+    function isolates headways for trips that terminate at a specific branch terminal.
+    This is useful for understanding service patterns on individual branches.
+
+    Parameters:
+    -----------
+    feed : gtfs_kit.Feed
+        A GTFS feed object loaded with gtfs_kit. Load with:
+        feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
+
+    route_id : str
+        Single route ID to analyze (e.g., 'A', '5', 'D')
+
+    direction_id : int
+        Direction ID (0 or 1). The meaning varies by route:
+        - For most routes: 0 = outbound (away from Manhattan), 1 = inbound (toward Manhattan)
+        - Check direction_names.csv or use travel_times.get_direction_name() for specifics
+
+    branch_terminal : str
+        Terminal station name or truncated version to identify the branch.
+        Can be full name or substring match (case-insensitive).
+        Examples:
+            - "Ozone Park - Lefferts Blvd" or just "Ozone" or "Lefferts"
+            - "Far Rockaway - Mott Av" or just "Far Rockaway"
+            - "Flatbush Av - Brooklyn College" or just "Flatbush"
+
+    service_id : str, default='Weekday'
+        Service pattern to analyze. Common values:
+        - 'Weekday': Monday-Friday service
+        - 'Saturday': Saturday service
+        - 'Sunday': Sunday/holiday service
+        Check your GTFS feed's calendar.txt for available service_ids
+
+    stop_id : str, optional
+        Specific stop to measure headways at. If None (default), uses the first
+        stop of each trip on the branch. Useful for analyzing service at a specific
+        station along the branch.
+
+    exclude_first_last : bool, default=True
+        If True, excludes the first and last headway of each service period to
+        avoid boundary effects (e.g., the long gap between last train of the day
+        and first train of the next day appearing as a "headway").
+
+    Returns:
+    --------
+    pd.DataFrame
+        DataFrame with the following structure:
+
+        Columns:
+            - hour (int): Hour of day (0-23)
+            - num_trains (int): Number of trains in that hour going to this branch
+            - avg_headway (float): Average minutes between trains to this branch
+            - min_headway (float): Minimum minutes between trains
+            - max_headway (float): Maximum minutes between trains
+
+        Metadata (stored in df.attrs):
+            - route_id (str): Route ID analyzed
+            - direction_id (int): Direction ID used
+            - direction_name (str): Human-readable direction name
+            - service_id (str): Service pattern analyzed
+            - branch_terminal (str): Full terminal station name found
+            - branch_terminal_id (str): GTFS stop_id of the terminal
+
+        Notes:
+            - Hours with no service have num_trains=0 and None for headway values
+            - All headway values are in minutes (float)
+            - The DataFrame has 24 rows (one per hour)
+
+    Raises:
+    -------
+    ValueError
+        If no terminal matching branch_terminal is found for the route/direction
+
+    Examples:
+    ---------
+    Analyze A train to Lefferts branch:
+        >>> import gtfs_kit as gk
+        >>> import combined_headways as ch
+        >>> feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
+        >>> df = ch.get_headway_dist_branch(feed, 'A', 0, 'Lefferts', service_id='Weekday')
+        >>> ch.print_headway_dist(df)
+
+    Using truncated terminal name:
+        >>> # "Ozone" will match "Ozone Park - Lefferts Blvd"
+        >>> df = ch.get_headway_dist_branch(feed, 'A', 0, 'Ozone')
+        >>> ch.print_headway_dist(df)
+
+    Analyze 5 train to different terminals:
+        >>> df_flatbush = ch.get_headway_dist_branch(feed, '5', 0, 'Flatbush')
+        >>> df_nereid = ch.get_headway_dist_branch(feed, '5', 1, 'Nereid')
+
+    Compare branch service to overall service:
+        >>> # Overall A train service (all branches combined)
+        >>> df_all = ch.get_headway_dist(feed, 0, 'A', service_id='Weekday')
+        >>> # Just the Lefferts branch
+        >>> df_lefferts = ch.get_headway_dist_branch(feed, 'A', 0, 'Lefferts')
+        >>> # Compare during rush hour
+        >>> all_rush = df_all[df_all['hour'] == 8].iloc[0]['avg_headway']
+        >>> lefferts_rush = df_lefferts[df_lefferts['hour'] == 8].iloc[0]['avg_headway']
+        >>> print(f"All A trains: {all_rush:.1f} min, Lefferts only: {lefferts_rush:.1f} min")
+
+    Analyze at specific stop:
+        >>> # Headways at Hoyt-Schermerhorn for Lefferts branch
+        >>> df = ch.get_headway_dist_branch(feed, 'A', 0, 'Lefferts', stop_id='A42')
+
+    See Also:
+    ---------
+    get_headway_dist : Main function for overall route headways (combines all branches)
+    print_headway_dist : Display formatted table from DataFrame
+    get_combined_headways_by_hour : Lower-level function for combined routes
+    """
+    # Get all trips for this route/direction/service
+    trips = feed.trips[
+        (feed.trips['route_id'] == route_id) &
+        (feed.trips['direction_id'] == direction_id) &
+        (feed.trips['service_id'] == service_id)
+    ].copy()
+
+    if trips.empty:
+        raise ValueError(
+            f"No trips found for route {route_id}, direction {direction_id}, service {service_id}"
+        )
+
+    # Get all stop times for these trips
+    stop_times = feed.stop_times[feed.stop_times['trip_id'].isin(trips['trip_id'])].copy()
+    stop_times = stop_times.sort_values(['trip_id', 'stop_sequence'])
+
+    # Get both first and last stops for each trip
+    first_stops = stop_times.groupby('trip_id').first().reset_index()
+    last_stops = stop_times.groupby('trip_id').last().reset_index()
+
+    # For identifying branches, we need to look at the "branch end" of the trip:
+    # - For outbound trips: the last stop (terminal/destination)
+    # - For inbound trips: the first stop (origin, which was the terminal of the outbound direction)
+    #
+    # Strategy: First check if the user's specified terminal exists at either end.
+    # If found, use that end. Otherwise, use automatic detection based on which end
+    # has more significant branches.
+
+    first_stop_unique = first_stops['stop_id'].unique()
+    last_stop_unique = last_stops['stop_id'].unique()
+
+    # First, try to find the user's specified terminal at EITHER end
+    branch_terminal_lower = branch_terminal.lower()
+
+    # Check first stops (origins)
+    matching_first_stop_id = None
+    matching_first_stop_name = None
+    for stop_id in first_stop_unique:
+        stop_name = feed.stops[feed.stops['stop_id'] == stop_id]['stop_name'].values
+        if len(stop_name) > 0:
+            stop_name = stop_name[0]
+            if branch_terminal_lower in stop_name.lower():
+                matching_first_stop_id = stop_id
+                matching_first_stop_name = stop_name
+                break
+
+    # Check last stops (destinations)
+    matching_last_stop_id = None
+    matching_last_stop_name = None
+    for stop_id in last_stop_unique:
+        stop_name = feed.stops[feed.stops['stop_id'] == stop_id]['stop_name'].values
+        if len(stop_name) > 0:
+            stop_name = stop_name[0]
+            if branch_terminal_lower in stop_name.lower():
+                matching_last_stop_id = stop_id
+                matching_last_stop_name = stop_name
+                break
+
+    # Determine which end to use based on where we found the terminal
+    if matching_first_stop_id is not None and matching_last_stop_id is not None:
+        # Terminal found at BOTH ends - use automatic detection
+        first_stop_counts = first_stops['stop_id'].value_counts()
+        last_stop_counts = last_stops['stop_id'].value_counts()
+        min_significant_trips = len(trips) * 0.05
+        significant_first_stops = sum(first_stop_counts >= min_significant_trips)
+        significant_last_stops = sum(last_stop_counts >= min_significant_trips)
+
+        if significant_first_stops > significant_last_stops:
+            branch_stops = first_stops
+            branch_end_description = "originates from"
+            matching_terminal_id = matching_first_stop_id
+            matching_terminal_name = matching_first_stop_name
+        elif significant_last_stops > significant_first_stops:
+            branch_stops = last_stops
+            branch_end_description = "terminates at"
+            matching_terminal_id = matching_last_stop_id
+            matching_terminal_name = matching_last_stop_name
+        else:
+            # Tie - use total count as tie-breaker
+            if len(first_stop_unique) < len(last_stop_unique):
+                branch_stops = first_stops
+                branch_end_description = "originates from"
+                matching_terminal_id = matching_first_stop_id
+                matching_terminal_name = matching_first_stop_name
+            else:
+                branch_stops = last_stops
+                branch_end_description = "terminates at"
+                matching_terminal_id = matching_last_stop_id
+                matching_terminal_name = matching_last_stop_name
+    elif matching_first_stop_id is not None:
+        # Found at first stops only (origins)
+        branch_stops = first_stops
+        branch_end_description = "originates from"
+        matching_terminal_id = matching_first_stop_id
+        matching_terminal_name = matching_first_stop_name
+    elif matching_last_stop_id is not None:
+        # Found at last stops only (destinations)
+        branch_stops = last_stops
+        branch_end_description = "terminates at"
+        matching_terminal_id = matching_last_stop_id
+        matching_terminal_name = matching_last_stop_name
+    else:
+        # Terminal not found at either end - build helpful error message
+        available_stops = []
+        for stop_id in list(first_stop_unique) + list(last_stop_unique):
+            stop_name = feed.stops[feed.stops['stop_id'] == stop_id]['stop_name'].values
+            if len(stop_name) > 0 and stop_name[0] not in [s.strip("'") for s in available_stops]:
+                available_stops.append(f"'{stop_name[0]}'")
+
+        raise ValueError(
+            f"No stop matching '{branch_terminal}' found for route {route_id}, "
+            f"direction {direction_id}.\nAvailable stops: {', '.join(sorted(set(available_stops)))}"
+        )
+
+    # Filter trips to only those associated with this branch
+    branch_trip_ids = branch_stops[branch_stops['stop_id'] == matching_terminal_id]['trip_id'].tolist()
+    branch_trips = trips[trips['trip_id'].isin(branch_trip_ids)]
+
+    # Get stop times for branch trips
+    branch_stop_times = feed.stop_times[
+        feed.stop_times['trip_id'].isin(branch_trip_ids)
+    ].copy()
+
+    # Filter by specific stop if requested, otherwise use first stop
+    if stop_id is not None:
+        branch_stop_times = branch_stop_times[branch_stop_times['stop_id'] == stop_id]
+        if branch_stop_times.empty:
+            raise ValueError(f"No stop times found for stop {stop_id} on this branch")
+    else:
+        # Use the first stop of each trip
+        branch_stop_times = branch_stop_times.sort_values(['trip_id', 'stop_sequence'])
+        branch_stop_times = branch_stop_times.groupby('trip_id').first().reset_index()
+
+    def parse_gtfs_time(time_str):
+        """Parse GTFS time format (which can exceed 24 hours)"""
+        parts = time_str.split(':')
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        seconds = int(parts[2])
+        return hours, minutes, seconds
+
+    # Convert to total seconds for sorting and headway calculation
+    branch_stop_times['departure_seconds'] = branch_stop_times['departure_time'].apply(
+        lambda x: sum([parse_gtfs_time(x)[0] * 3600,
+                      parse_gtfs_time(x)[1] * 60,
+                      parse_gtfs_time(x)[2]])
+    )
+
+    # Sort by departure time
+    branch_stop_times = branch_stop_times.sort_values('departure_seconds')
+
+    # Calculate headways
+    departure_times = branch_stop_times['departure_seconds'].values
+    departure_time_strings = branch_stop_times['departure_time'].values
+
+    headways_by_hour = defaultdict(list)
+
+    if len(departure_times) < 2:
+        # Not enough trips to calculate headways, return empty DataFrame
+        rows = []
+        for hour in range(24):
+            rows.append({
+                'hour': hour,
+                'num_trains': 0 if len(departure_times) == 0 else 1,
+                'avg_headway': None,
+                'min_headway': None,
+                'max_headway': None
+            })
+        df = pd.DataFrame(rows)
+    else:
+        # Calculate headways between consecutive trains
+        for i in range(1, len(departure_times)):
+            headway_seconds = departure_times[i] - departure_times[i-1]
+            headway_minutes = headway_seconds / 60.0
+
+            # Skip first/last headways if requested
+            if exclude_first_last and (i == 1 or i == len(departure_times) - 1):
+                continue
+
+            # Assign headway to the hour of the EARLIER train
+            earlier_train_time = departure_time_strings[i-1]
+            hour = parse_gtfs_time(earlier_train_time)[0] % 24
+
+            headways_by_hour[hour].append(headway_minutes)
+
+        # Build DataFrame
+        rows = []
+        for hour in range(24):
+            if hour in headways_by_hour:
+                headways = headways_by_hour[hour]
+                if headways:
+                    num_trains = len(headways)
+                    avg_hw = sum(headways) / len(headways)
+                    min_hw = min(headways)
+                    max_hw = max(headways)
+
+                    rows.append({
+                        'hour': hour,
+                        'num_trains': num_trains,
+                        'avg_headway': avg_hw,
+                        'min_headway': min_hw,
+                        'max_headway': max_hw
+                    })
+                else:
+                    rows.append({
+                        'hour': hour,
+                        'num_trains': 0,
+                        'avg_headway': None,
+                        'min_headway': None,
+                        'max_headway': None
+                    })
+            else:
+                rows.append({
+                    'hour': hour,
+                    'num_trains': 0,
+                    'avg_headway': None,
+                    'min_headway': None,
+                    'max_headway': None
+                })
+
+        df = pd.DataFrame(rows)
+
+    # Add metadata as attributes
+    df.attrs['route_id'] = route_id
+    df.attrs['direction_id'] = direction_id
+    df.attrs['service_id'] = service_id
+    df.attrs['branch_terminal'] = matching_terminal_name
+    df.attrs['branch_terminal_id'] = matching_terminal_id
+    df.attrs['branch_end_description'] = branch_end_description
+
+    # Get direction name
+    from travel_times import get_direction_name
+    df.attrs['direction_name'] = get_direction_name(feed, route_id, direction_id, service_id)
+
+    return df
+
+
+def get_headway_dist_combined(feed, direction_id, *route_specs, service_id='Weekday',
+                                stop_id=None, hour_range=None, exclude_first_last=True):
+    """
+    Get headway distribution for a combination of routes and/or specific branches.
+
+    This is an enhanced version of get_headway_dist() that allows:
+    - Mixing regular routes with specific branch terminals
+    - Filtering by time of day (hour range)
+    - Analyzing combined service from different routes and branches
+
+    Parameters:
+    -----------
+    feed : gtfs_kit.Feed
+        A GTFS feed object loaded with gtfs_kit
+
+    direction_id : int
+        Direction ID (0 or 1)
+
+    *route_specs : str or tuple
+        Variable number of route specifications. Each can be:
+        - A route ID string: e.g., 'A', '1', '4' (includes all trips on that route)
+        - A tuple (route_id, branch_terminal): e.g., ('5', 'Nereid'), ('A', 'Far Rockaway')
+          (includes only trips to/from that specific branch)
+
+        Examples:
+            'A', 'C'  # All A and C trains
+            ('5', 'Nereid')  # Only 5 trains to/from Nereid
+            '4', ('5', 'Dyre')  # All 4 trains + 5 trains to/from Dyre
+
+    service_id : str, default='Weekday'
+        Service pattern to analyze ('Weekday', 'Saturday', 'Sunday')
+
+    stop_id : str, optional
+        Specific stop to measure headways at
+
+    hour_range : tuple of (int, int), optional
+        Hour range to filter by, as (start_hour, end_hour) inclusive.
+        For example, (7, 9) includes hours 7, 8, and 9.
+        If None (default), includes all hours (0-23).
+
+    exclude_first_last : bool, default=True
+        Exclude first/last headways to avoid boundary effects
+
+    Returns:
+    --------
+    pd.DataFrame
+        Same structure as get_headway_dist(), with metadata indicating which
+        routes/branches were included and the hour range if specified.
+
+        Columns:
+            - hour (int): Hour of day (filtered by hour_range if provided)
+            - num_trains (int): Number of trains in that hour
+            - avg_headway (float): Average minutes between trains
+            - min_headway (float): Minimum minutes between trains
+            - max_headway (float): Maximum minutes between trains
+
+        Metadata (in df.attrs):
+            - route_specs (list): Description of routes/branches included
+            - direction_id (int): Direction ID
+            - direction_name (str): Human-readable direction name
+            - service_id (str): Service pattern
+            - hour_range (tuple or None): Hour range filter if provided
+
+    Examples:
+    ---------
+    All 4/5/6 trains on Lexington Ave:
+        >>> df = ch.get_headway_dist_combined(feed, 1, '4', '5', '6', service_id='Weekday')
+
+    Specific branches only:
+        >>> # 5 trains to Nereid + A trains to Rockaway Park
+        >>> df = ch.get_headway_dist_combined(feed, 0, ('5', 'Nereid'), ('A', 'Rockaway Park'))
+
+    Mix of regular routes and branches:
+        >>> # All 4 trains + only 5 trains going to Dyre
+        >>> df = ch.get_headway_dist_combined(feed, 1, '4', ('5', 'Dyre'))
+
+    Morning rush hour only (7-9 AM):
+        >>> df = ch.get_headway_dist_combined(feed, 1, '4', '5', '6', hour_range=(7, 9))
+
+    Evening rush with specific branch (5-7 PM):
+        >>> df = ch.get_headway_dist_combined(feed, 0, ('5', 'Nereid'), hour_range=(17, 19))
+    """
+    # Parse route specifications and collect trip IDs
+    all_trip_ids = []
+    route_descriptions = []
+
+    for spec in route_specs:
+        if isinstance(spec, tuple):
+            # Branch specification: (route_id, branch_terminal)
+            route_id, branch_terminal = spec
+
+            # Get trips for this branch using get_headway_dist_branch
+            branch_df = get_headway_dist_branch(
+                feed, route_id, direction_id, branch_terminal,
+                service_id=service_id, stop_id=stop_id, exclude_first_last=exclude_first_last
+            )
+
+            # Extract trip IDs from the branch
+            trips = feed.trips[
+                (feed.trips['route_id'] == route_id) &
+                (feed.trips['direction_id'] == direction_id) &
+                (feed.trips['service_id'] == service_id)
+            ]
+            stop_times = feed.stop_times[feed.stop_times['trip_id'].isin(trips['trip_id'])].copy()
+            stop_times = stop_times.sort_values(['trip_id', 'stop_sequence'])
+
+            # Get the matching terminal ID from branch_df metadata
+            terminal_id = branch_df.attrs['branch_terminal_id']
+            branch_end_desc = branch_df.attrs['branch_end_description']
+
+            # Find trips associated with this terminal
+            if branch_end_desc == "originates from":
+                first_stops = stop_times.groupby('trip_id').first().reset_index()
+                branch_trip_ids = first_stops[first_stops['stop_id'] == terminal_id]['trip_id'].tolist()
+            else:  # "terminates at"
+                last_stops = stop_times.groupby('trip_id').last().reset_index()
+                branch_trip_ids = last_stops[last_stops['stop_id'] == terminal_id]['trip_id'].tolist()
+
+            all_trip_ids.extend(branch_trip_ids)
+
+            # Build description
+            terminal_name = branch_df.attrs['branch_terminal']
+            if branch_end_desc == "originates from":
+                route_descriptions.append(f"{route_id} from {terminal_name}")
+            else:
+                route_descriptions.append(f"{route_id} to {terminal_name}")
+
+        else:
+            # Simple route specification: just a route_id string
+            route_id = spec
+
+            # Get all trips for this route
+            trips = feed.trips[
+                (feed.trips['route_id'] == route_id) &
+                (feed.trips['direction_id'] == direction_id) &
+                (feed.trips['service_id'] == service_id)
+            ]
+
+            all_trip_ids.extend(trips['trip_id'].tolist())
+            route_descriptions.append(route_id)
+
+    if not all_trip_ids:
+        raise ValueError("No trips found for the specified route specifications")
+
+    # Now calculate headways for all collected trips
+    combined_trips = feed.trips[feed.trips['trip_id'].isin(all_trip_ids)].copy()
+
+    # Get stop times
+    stop_times = feed.stop_times[feed.stop_times['trip_id'].isin(combined_trips['trip_id'])].copy()
+
+    # Filter by specific stop if requested
+    if stop_id is not None:
+        stop_times = stop_times[stop_times['stop_id'] == stop_id]
+        if stop_times.empty:
+            raise ValueError(f"No stop times found for stop {stop_id}")
+    else:
+        # Use the first stop of each trip
+        stop_times = stop_times.sort_values(['trip_id', 'stop_sequence'])
+        stop_times = stop_times.groupby('trip_id').first().reset_index()
+
+    def parse_gtfs_time(time_str):
+        """Parse GTFS time format (which can exceed 24 hours)"""
+        parts = time_str.split(':')
+        hours = int(parts[0])
+        minutes = int(parts[1])
+        seconds = int(parts[2])
+        return hours, minutes, seconds
+
+    # Convert to total seconds for sorting and headway calculation
+    stop_times['departure_seconds'] = stop_times['departure_time'].apply(
+        lambda x: sum([parse_gtfs_time(x)[0] * 3600,
+                      parse_gtfs_time(x)[1] * 60,
+                      parse_gtfs_time(x)[2]])
+    )
+
+    # Filter by hour range if specified
+    if hour_range is not None:
+        start_hour, end_hour = hour_range
+        stop_times['hour'] = stop_times['departure_time'].apply(
+            lambda x: parse_gtfs_time(x)[0] % 24
+        )
+        stop_times = stop_times[
+            (stop_times['hour'] >= start_hour) &
+            (stop_times['hour'] <= end_hour)
+        ]
+
+    # Sort by departure time
+    stop_times = stop_times.sort_values('departure_seconds')
+
+    # Calculate headways
+    departure_times = stop_times['departure_seconds'].values
+    departure_time_strings = stop_times['departure_time'].values
+
+    headways_by_hour = defaultdict(list)
+
+    if len(departure_times) < 2:
+        # Not enough trips - return empty DataFrame
+        hour_list = range(hour_range[0], hour_range[1] + 1) if hour_range else range(24)
+        rows = []
+        for hour in hour_list:
+            rows.append({
+                'hour': hour,
+                'num_trains': 0 if len(departure_times) == 0 else 1,
+                'avg_headway': None,
+                'min_headway': None,
+                'max_headway': None
+            })
+        df = pd.DataFrame(rows)
+    else:
+        # Calculate headways between consecutive trains
+        for i in range(1, len(departure_times)):
+            headway_seconds = departure_times[i] - departure_times[i-1]
+            headway_minutes = headway_seconds / 60.0
+
+            # Skip first/last headways if requested
+            if exclude_first_last and (i == 1 or i == len(departure_times) - 1):
+                continue
+
+            # Assign headway to the hour of the EARLIER train
+            earlier_train_time = departure_time_strings[i-1]
+            hour = parse_gtfs_time(earlier_train_time)[0] % 24
+
+            headways_by_hour[hour].append(headway_minutes)
+
+        # Build DataFrame
+        hour_list = range(hour_range[0], hour_range[1] + 1) if hour_range else range(24)
+        rows = []
+        for hour in hour_list:
+            if hour in headways_by_hour:
+                headways = headways_by_hour[hour]
+                if headways:
+                    num_trains = len(headways)
+                    avg_hw = sum(headways) / len(headways)
+                    min_hw = min(headways)
+                    max_hw = max(headways)
+
+                    rows.append({
+                        'hour': hour,
+                        'num_trains': num_trains,
+                        'avg_headway': avg_hw,
+                        'min_headway': min_hw,
+                        'max_headway': max_hw
+                    })
+                else:
+                    rows.append({
+                        'hour': hour,
+                        'num_trains': 0,
+                        'avg_headway': None,
+                        'min_headway': None,
+                        'max_headway': None
+                    })
+            else:
+                rows.append({
+                    'hour': hour,
+                    'num_trains': 0,
+                    'avg_headway': None,
+                    'min_headway': None,
+                    'max_headway': None
+                })
+
+        df = pd.DataFrame(rows)
+
+    # Add metadata
+    df.attrs['route_specs'] = route_descriptions
+    df.attrs['direction_id'] = direction_id
+    df.attrs['service_id'] = service_id
+    df.attrs['hour_range'] = hour_range
+
+    # Get direction name from first route
+    from travel_times import get_direction_name
+    first_route = route_specs[0] if isinstance(route_specs[0], str) else route_specs[0][0]
+    df.attrs['direction_name'] = get_direction_name(feed, first_route, direction_id, service_id)
+
+    return df
 
 
 def get_combined_headways_by_hour(feed, route_ids, direction_id=None,
@@ -667,4 +1336,26 @@ analyze_combined_service_pattern(
     direction_id=1,
     service_id='Weekday'
 )
+
+# Example 4: Analyze specific branch headways
+# A train has multiple branches - analyze each separately
+df_lefferts = get_headway_dist_branch(feed, 'A', 0, 'Lefferts', service_id='Weekday')
+print_headway_dist(df_lefferts)
+
+df_far_rockaway = get_headway_dist_branch(feed, 'A', 0, 'Far Rockaway', service_id='Weekday')
+print_headway_dist(df_far_rockaway)
+
+# Can use truncated terminal names too
+df_ozone = get_headway_dist_branch(feed, 'A', 0, 'Ozone')  # Matches "Ozone Park - Lefferts Blvd"
+print_headway_dist(df_ozone)
+
+# Example 5: Compare overall vs branch-specific service
+df_all_a = get_headway_dist(feed, 0, 'A', service_id='Weekday')
+df_lefferts = get_headway_dist_branch(feed, 'A', 0, 'Lefferts', service_id='Weekday')
+
+print("\\nComparison at 8 AM:")
+all_8am = df_all_a[df_all_a['hour'] == 8].iloc[0]
+lefferts_8am = df_lefferts[df_lefferts['hour'] == 8].iloc[0]
+print(f"All A trains: {all_8am['avg_headway']:.1f} min avg, {all_8am['num_trains']} trains")
+print(f"Lefferts only: {lefferts_8am['avg_headway']:.1f} min avg, {lefferts_8am['num_trains']} trains")
 """)

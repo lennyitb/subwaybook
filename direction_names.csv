@@ -20,7 +20,7 @@ A,1,to Queens
 7,0,to Queens
 7,1,to Manhattan
 7X,0,to Queens
-7X,1,to The Bronx
+7X,1,to Manhattan
 B,0,to The Bronx
 B,1,to Brooklyn
 C,0,to Manhattan

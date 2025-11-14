@@ -79,8 +79,9 @@ def get_stop_borough(lat, lon):
         (-73.945, 40.580),  # Sheepshead Bay
         (-73.930, 40.595),  # Marine Park
         (-73.900, 40.615),  # Canarsie
-        (-73.872, 40.645),  # East New York
-        (-73.903, 40.675),  # Bushwick
+        (-73.870, 40.645),  # East New York south
+        (-73.860, 40.678),  # Grant Av (Brooklyn/Queens border - eastern edge)
+        (-73.903, 40.680),  # East New York north / Bushwick
         (-73.920, 40.695),  # Williamsburg
         (-73.940, 40.705),  # Greenpoint
         (-73.985, 40.710),  # DUMBO
