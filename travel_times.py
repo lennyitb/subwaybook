@@ -429,6 +429,143 @@ def calculate_travel_time_matrix(feed, route_id, direction_id, service_id='Weekd
     return df
 
 
+def calculate_travel_time_matrix_by_hour(feed, route_id, direction_id, hour, service_id='Weekday', canonical_station_order=None):
+    """
+    Calculate a travel time matrix for a route filtered by hour of day.
+
+    For each pair of stations (origin, destination), calculates the average
+    travel time across all trips that have at least one stop occurring within
+    the specified hour.
+
+    Parameters:
+    -----------
+    feed : gtfs_kit.Feed
+        A GTFS feed object loaded with gtfs_kit
+    route_id : str
+        The route ID (e.g., 'A', 'L', '7')
+    direction_id : int
+        Direction ID (0 or 1)
+    hour : int
+        Hour of day (0-23) to filter trips by
+    service_id : str, default='Weekday'
+        Service ID to filter by
+    canonical_station_order : list, optional
+        Pre-determined station order to use. If None, will determine from this direction.
+
+    Returns:
+    --------
+    pd.DataFrame
+        Travel time matrix with station names as both row and column indices.
+        Values are travel times in minutes (float).
+        NaN indicates no direct service between those stations during this hour.
+    """
+    # Get station ordering
+    if canonical_station_order is None:
+        station_order = get_station_order(feed, route_id, direction_id, service_id)
+    else:
+        station_order = canonical_station_order
+
+    if not station_order:
+        return pd.DataFrame()
+
+    stop_ids = [s[0] for s in station_order]
+    stop_names = [s[1] for s in station_order]
+
+    # Get all trips for this route/direction/service
+    trips = feed.trips[
+        (feed.trips['route_id'] == route_id) &
+        (feed.trips['direction_id'] == direction_id) &
+        (feed.trips['service_id'] == service_id)
+    ].copy()
+
+    # Filter trips to only those with stops occurring in the specified hour
+    trips_in_hour = set()
+    for trip_id in trips['trip_id']:
+        stop_times = feed.stop_times[feed.stop_times['trip_id'] == trip_id]
+
+        for _, row in stop_times.iterrows():
+            # Parse arrival and departure times
+            arrival_parts = row['arrival_time'].split(':')
+            arrival_hour = int(arrival_parts[0]) % 24  # Handle times >= 24:00:00
+
+            departure_parts = row['departure_time'].split(':')
+            departure_hour = int(departure_parts[0]) % 24
+
+            # Check if either arrival or departure is in the specified hour
+            if arrival_hour == hour or departure_hour == hour:
+                trips_in_hour.add(trip_id)
+                break  # No need to check other stops for this trip
+
+    # Filter trips to only those in the specified hour
+    trips = trips[trips['trip_id'].isin(trips_in_hour)]
+
+    if trips.empty:
+        # Return empty matrix with proper structure if no trips found
+        matrix_data = np.full((len(stop_ids), len(stop_ids)), np.nan)
+        for i in range(len(stop_ids)):
+            matrix_data[i][i] = 0  # Same station = 0 minutes
+        df = pd.DataFrame(matrix_data, index=stop_names, columns=stop_names)
+        return df.T
+
+    # Initialize matrix to store travel times (list of times for each pair)
+    travel_times = defaultdict(list)
+
+    # For each trip, calculate travel times between all pairs of stops
+    for trip_id in trips['trip_id']:
+        stop_times = feed.stop_times[feed.stop_times['trip_id'] == trip_id].sort_values('stop_sequence')
+
+        # Convert to list for easier iteration
+        stops_data = []
+        for _, row in stop_times.iterrows():
+            # Normalize stop ID to parent station
+            normalized_stop_id = normalize_stop_id(feed, row['stop_id'])
+
+            if normalized_stop_id in stop_ids:
+                # Parse time to seconds
+                arrival_parts = row['arrival_time'].split(':')
+                arrival_seconds = int(arrival_parts[0]) * 3600 + int(arrival_parts[1]) * 60 + int(arrival_parts[2])
+
+                departure_parts = row['departure_time'].split(':')
+                departure_seconds = int(departure_parts[0]) * 3600 + int(departure_parts[1]) * 60 + int(departure_parts[2])
+
+                stops_data.append({
+                    'stop_id': normalized_stop_id,
+                    'arrival_seconds': arrival_seconds,
+                    'departure_seconds': departure_seconds
+                })
+
+        # Calculate travel time between each pair of stops on this trip
+        for i, origin in enumerate(stops_data):
+            for j, destination in enumerate(stops_data):
+                if j > i:  # Calculate for the direction this trip is traveling
+                    travel_seconds = destination['arrival_seconds'] - origin['departure_seconds']
+                    travel_minutes = travel_seconds / 60.0
+
+                    # Store the travel time for this pair
+                    pair_key = (origin['stop_id'], destination['stop_id'])
+                    travel_times[pair_key].append(travel_minutes)
+
+    # Calculate average travel times
+    matrix_data = np.full((len(stop_ids), len(stop_ids)), np.nan)
+
+    for i, origin_id in enumerate(stop_ids):
+        for j, dest_id in enumerate(stop_ids):
+            if i == j:
+                matrix_data[i][j] = 0  # Same station = 0 minutes
+            else:
+                # Fill based on actual travel time data (could be upper or lower triangle)
+                pair_key = (origin_id, dest_id)
+                if pair_key in travel_times and travel_times[pair_key]:
+                    matrix_data[i][j] = np.mean(travel_times[pair_key])
+
+    # Create DataFrame with station names as indices
+    # Transpose so columns = departure points, rows = destinations
+    df = pd.DataFrame(matrix_data, index=stop_names, columns=stop_names)
+    df = df.T
+
+    return df
+
+
 def load_official_direction_names(csv_path='direction_names.csv'):
     """
     Load official direction names from CSV file.
