@@ -420,21 +420,24 @@ Gets the list of express stops that both routes serve.
 
 ## Express Service Windows
 
-### `generate_express_windows(feed, service_id='Weekday', output_file='express_window_data.json')`
+### `generate_express_windows(feed, service_ids=None, output_file='express_window_data.json')`
 
 **Location:** `express_windows.py`
 
-Generates express service window data for all subway routes and saves to JSON.
+Generates express service window data for all subway routes across multiple service patterns (Weekday, Saturday, Sunday) and saves to JSON.
 
-This function analyzes all NYC subway routes (including express variants like 6X, 7X, FX) and determines when each route runs express service in each borough, broken down by direction.
+This function analyzes all NYC subway routes (including express variants like 6X, 7X, FX) and determines when each route runs express service in each borough, broken down by direction and service pattern.
 
 **Parameters:**
 
 - `feed`: GTFS feed object from gtfs_kit
-- `service_id`: Service type (default: 'Weekday')
+- `service_ids`: Service ID(s) to analyze. Can be:
+  - A single service ID string (e.g., `'Weekday'`)
+  - A list of service IDs (e.g., `['Weekday', 'Saturday', 'Sunday']`)
+  - `None` to auto-detect all service IDs in the feed (default)
 - `output_file`: Path to output JSON file (default: 'express_window_data.json')
 
-**Returns:** Dictionary mapping route_id → direction_id → borough → (first_time, last_time)
+**Returns:** Dictionary mapping service_id → route_id → direction_id → borough → (first_time, last_time)
 
 **Notes:**
 
@@ -454,10 +457,16 @@ import express_windows as ew
 
 feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
 
-# Generate data for all routes
-data = ew.generate_express_windows(feed, service_id='Weekday')
+# Generate data for specific service patterns
+data = ew.generate_express_windows(feed, service_ids=['Weekday', 'Saturday', 'Sunday'])
 
-# Or run as script to regenerate JSON
+# Generate for all service patterns in feed
+data = ew.generate_express_windows(feed, service_ids=None)
+
+# Generate for single service pattern
+data = ew.generate_express_windows(feed, service_ids='Weekday')
+
+# Or run as script to regenerate JSON (generates Weekday, Saturday, Sunday)
 # python3 express_windows.py
 ```
 
@@ -473,7 +482,7 @@ Loads pre-generated express service window data from JSON file.
 
 - `json_file`: Path to JSON file (default: 'express_window_data.json')
 
-**Returns:** Dictionary mapping route_id → direction_id → borough → [first_time, last_time]
+**Returns:** Dictionary mapping service_id → route_id → direction_id → borough → [first_time, last_time]
 
 **Raises:** FileNotFoundError if the JSON file doesn't exist
 
@@ -483,22 +492,23 @@ Loads pre-generated express service window data from JSON file.
 import express_windows as ew
 
 data = ew.load_express_windows()
-print(data['A']['0']['Manhattan'])
+print(data['Weekday']['A']['0']['Manhattan'])
 # Output: ['05:12:30', '22:18:00']
 ```
 
 ---
 
-### `get_express_window(route_id, direction_id, borough=None, json_file='express_window_data.json')`
+### `get_express_window(route_id, direction_id, service_id='Weekday', borough=None, json_file='express_window_data.json')`
 
 **Location:** `express_windows.py`
 
-Gets express service window for a specific route, direction, and optionally borough.
+Gets express service window for a specific route, direction, service pattern, and optionally borough.
 
 **Parameters:**
 
 - `route_id`: Route ID (e.g., 'A', 'D', '2', '6X')
 - `direction_id`: Direction ID (0 or 1)
+- `service_id`: Service ID (e.g., 'Weekday', 'Saturday', 'Sunday') - default: 'Weekday'
 - `borough`: Specific borough (e.g., 'Manhattan', 'Brooklyn', 'The Bronx'), or None for all boroughs
 - `json_file`: Path to JSON file (default: 'express_window_data.json')
 
@@ -507,33 +517,33 @@ Gets express service window for a specific route, direction, and optionally boro
 - If `borough` is None: dict mapping borough → [first_time, last_time]
 - If `borough` is specified: [first_time, last_time] for that borough, or None if no express service
 
-**Raises:** KeyError if route or direction not found
+**Raises:** KeyError if service_id, route, or direction not found
 
 **Examples:**
 
 ```python
 import express_windows as ew
 
-# Get all boroughs for A train northbound
-windows = ew.get_express_window('A', 0)
+# Get all boroughs for A train northbound on weekdays
+windows = ew.get_express_window('A', 0, 'Weekday')
 # Returns: {'Manhattan': ['05:12:30', '22:18:00'], 'Brooklyn': ['05:12:30', '22:18:00']}
 
-# Get specific borough
-manhattan_window = ew.get_express_window('A', 0, 'Manhattan')
-# Returns: ['05:12:30', '22:18:00']
+# Get specific borough for weekend service
+manhattan_window = ew.get_express_window('A', 0, 'Saturday', 'Manhattan')
+# Returns: ['05:12:30', '22:18:00'] or None
 
-# Check if train runs express
-bronx_window = ew.get_express_window('D', 0, 'The Bronx')
+# Check if train runs express on Sundays
+bronx_window = ew.get_express_window('D', 0, 'Sunday', 'The Bronx')
 # Returns: ['15:04:30', '17:24:30'] or None if no express service
 
 # Local-only train
-c_window = ew.get_express_window('C', 0, 'Manhattan')
+c_window = ew.get_express_window('C', 0, 'Weekday', 'Manhattan')
 # Returns: None
 ```
 
 ---
 
-### `print_express_windows(route_id=None, json_file='express_window_data.json')`
+### `print_express_windows(route_id=None, service_id=None, json_file='express_window_data.json')`
 
 **Location:** `express_windows.py`
 
@@ -542,6 +552,7 @@ Pretty-prints express service windows for routes.
 **Parameters:**
 
 - `route_id`: Specific route to print, or None to print all routes
+- `service_id`: Specific service ID to print (e.g., 'Weekday', 'Saturday'), or None to print all service IDs
 - `json_file`: Path to JSON file (default: 'express_window_data.json')
 
 **Example:**
@@ -549,17 +560,23 @@ Pretty-prints express service windows for routes.
 ```python
 import express_windows as ew
 
-# Print one route
+# Print one route for weekday service
+ew.print_express_windows('A', 'Weekday')
+
+# Print one route for all service patterns
 ew.print_express_windows('A')
 
-# Print all routes
+# Print all routes for all service patterns
 ew.print_express_windows()
+
+# Print all routes for Saturday service only
+ew.print_express_windows(service_id='Saturday')
 ```
 
 **Output Format:**
 
 ```
-A Train
+Weekday Service - A Train
 ================================================================================
 
 to Manhattan:
@@ -690,31 +707,42 @@ import express_windows as ew
 # Load pre-generated express window data (fast)
 data = ew.load_express_windows()
 
-# Check when A train runs express in Manhattan
-a_manhattan = ew.get_express_window('A', 0, 'Manhattan')
-print(f"A train express in Manhattan: {a_manhattan[0]} to {a_manhattan[1]}")
-# Output: A train express in Manhattan: 05:12:30 to 22:18:00
+# Check when A train runs express in Manhattan on weekdays
+a_manhattan = ew.get_express_window('A', 0, 'Weekday', 'Manhattan')
+print(f"A train express in Manhattan (Weekday): {a_manhattan[0]} to {a_manhattan[1]}")
+# Output: A train express in Manhattan (Weekday): 05:12:30 to 22:18:00
 
-# Check all boroughs for D train southbound
-d_windows = ew.get_express_window('D', 1)
+# Compare weekday vs weekend service
+a_manhattan_sat = ew.get_express_window('A', 0, 'Saturday', 'Manhattan')
+if a_manhattan_sat:
+    print(f"A train express in Manhattan (Saturday): {a_manhattan_sat[0]} to {a_manhattan_sat[1]}")
+
+# Check all boroughs for D train southbound on weekdays
+d_windows = ew.get_express_window('D', 1, 'Weekday')
 for borough, (first, last) in d_windows.items():
     print(f"D train express in {borough}: {first} to {last}")
 
 # Check if C train runs express (it doesn't)
-c_windows = ew.get_express_window('C', 0)
+c_windows = ew.get_express_window('C', 0, 'Weekday')
 print(f"C train express windows: {c_windows}")  # Empty dict
 
 # Check express variant (6X runs express in Bronx, local in Manhattan)
-x_windows = ew.get_express_window('6X', 0)
+x_windows = ew.get_express_window('6X', 0, 'Weekday')
 print(f"6X express windows: {x_windows}")  # Only shows Bronx
 
-# Pretty-print all express windows for a route
-ew.print_express_windows('4')
+# Pretty-print all express windows for a route on weekdays
+ew.print_express_windows('4', 'Weekday')
+
+# Pretty-print all routes for all service patterns
+ew.print_express_windows()
 
 # Regenerate data from GTFS (slow, only needed when GTFS updates)
 # import gtfs_kit as gk
 # feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
-# ew.generate_express_windows(feed, service_id='Weekday')
+# # Generate for all standard service patterns
+# ew.generate_express_windows(feed, service_ids=['Weekday', 'Saturday', 'Sunday'])
+# # Or auto-detect all service_ids
+# ew.generate_express_windows(feed, service_ids=None)
 ```
 
 ---
@@ -776,8 +804,9 @@ Generated programmatically via print statements (not automatically exported to C
 
 - File: `express_window_data.json`
 - Generated by: `python3 express_windows.py`
-- Contains: Express service windows for all routes, all directions, all boroughs
-- Structure: `{route_id: {direction_id: {borough: [first_time, last_time]}}}`
+- Contains: Express service windows for all routes, all directions, all boroughs, across multiple service patterns
+- Structure: `{service_id: {route_id: {direction_id: {borough: [first_time, last_time]}}}}`
 - Used by: `express_windows.load_express_windows()` and `express_windows.get_express_window()`
 - Includes: All standard routes plus 6X, 7X, FX express variants and J/Z skip-stop data
+- Service patterns: Weekday, Saturday, Sunday (by default; can be customized)
 - Special cases: Pre-applied hardcoded rules for A, B, C, F, M, R, 1, 6, L, G trains
