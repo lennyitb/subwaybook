@@ -1,0 +1,406 @@
+{
+  "A": {
+    "1": {
+      "direction_name": "to Queens",
+      "Manhattan": [
+        "05:09:00",
+        "22:06:00"
+      ],
+      "Brooklyn": [
+        "01:13:00",
+        "22:06:00"
+      ]
+    },
+    "0": {
+      "direction_name": "to Manhattan",
+      "Brooklyn": [
+        "05:12:30",
+        "22:18:00"
+      ],
+      "Manhattan": [
+        "05:12:30",
+        "22:18:00"
+      ]
+    }
+  },
+  "C": {
+    "1": {
+      "direction_name": "to Brooklyn"
+    },
+    "0": {
+      "direction_name": "to Manhattan"
+    }
+  },
+  "E": {
+    "1": {
+      "direction_name": "to Manhattan",
+      "Queens": [
+        "05:09:30",
+        "22:30:00"
+      ]
+    },
+    "0": {
+      "direction_name": "to Queens",
+      "Queens": [
+        "05:54:30",
+        "21:29:00"
+      ]
+    }
+  },
+  "B": {
+    "1": {
+      "direction_name": "to Brooklyn",
+      "Manhattan": [
+        "06:00:00",
+        "22:00:00"
+      ],
+      "Brooklyn": [
+        "06:00:00",
+        "22:00:00"
+      ]
+    },
+    "0": {
+      "direction_name": "to The Bronx",
+      "Brooklyn": [
+        "06:00:00",
+        "22:00:00"
+      ],
+      "Manhattan": [
+        "06:00:00",
+        "22:00:00"
+      ]
+    }
+  },
+  "D": {
+    "1": {
+      "direction_name": "to Brooklyn",
+      "The Bronx": [
+        "06:15:00",
+        "08:55:00"
+      ],
+      "Manhattan": [
+        "06:15:00",
+        "08:55:00"
+      ],
+      "Brooklyn": [
+        "06:15:00",
+        "21:42:00"
+      ]
+    },
+    "0": {
+      "direction_name": "to The Bronx",
+      "Brooklyn": [
+        "05:45:30",
+        "20:36:30"
+      ],
+      "Manhattan": [
+        "15:04:30",
+        "17:24:30"
+      ],
+      "The Bronx": [
+        "15:04:30",
+        "17:24:30"
+      ]
+    }
+  },
+  "F": {
+    "1": {
+      "direction_name": "to Brooklyn",
+      "Queens": [
+        "05:01:00",
+        "22:24:30"
+      ]
+    },
+    "0": {
+      "direction_name": "to Queens",
+      "Queens": [
+        "05:07:00",
+        "20:42:00"
+      ]
+    }
+  },
+  "M": {
+    "1": {
+      "direction_name": "to Middle Village"
+    },
+    "0": {
+      "direction_name": "to Forest Hills"
+    }
+  },
+  "N": {
+    "1": {
+      "direction_name": "to Brooklyn",
+      "Manhattan": [
+        "05:30:00",
+        "22:47:00"
+      ],
+      "Brooklyn": [
+        "05:30:00",
+        "22:47:00"
+      ]
+    },
+    "0": {
+      "direction_name": "to Queens",
+      "Brooklyn": [
+        "05:17:00",
+        "22:13:00"
+      ],
+      "Manhattan": [
+        "05:17:00",
+        "22:13:00"
+      ]
+    }
+  },
+  "Q": {
+    "1": {
+      "direction_name": "to Brooklyn",
+      "Manhattan": [
+        "05:35:00",
+        "23:11:30"
+      ]
+    },
+    "0": {
+      "direction_name": "to Manhattan",
+      "Manhattan": [
+        "05:20:00",
+        "22:50:00"
+      ]
+    }
+  },
+  "R": {
+    "1": {
+      "direction_name": "to Brooklyn"
+    },
+    "0": {
+      "direction_name": "to Queens"
+    }
+  },
+  "W": {
+    "1": {
+      "direction_name": "to Manhattan"
+    },
+    "0": {
+      "direction_name": "to Queens"
+    }
+  },
+  "1": {
+    "1": {
+      "direction_name": "to Manhattan"
+    },
+    "0": {
+      "direction_name": "to The Bronx"
+    }
+  },
+  "2": {
+    "1": {
+      "direction_name": "to Brooklyn",
+      "The Bronx": [
+        "06:00:30",
+        "07:34:30"
+      ],
+      "Manhattan": [
+        "04:39:00",
+        "23:26:30"
+      ]
+    },
+    "0": {
+      "direction_name": "to The Bronx",
+      "Brooklyn": [
+        "15:42:30",
+        "17:09:30"
+      ],
+      "Manhattan": [
+        "05:21:00",
+        "24:01:00"
+      ]
+    }
+  },
+  "3": {
+    "1": {
+      "direction_name": "to Brooklyn"
+    },
+    "0": {
+      "direction_name": "to Manhattan",
+      "Manhattan": [
+        "00:45:30",
+        "06:09:00"
+      ]
+    }
+  },
+  "4": {
+    "1": {
+      "direction_name": "to Manhattan",
+      "The Bronx": [
+        "06:32:00",
+        "08:29:30"
+      ],
+      "Manhattan": [
+        "04:38:30",
+        "23:45:30"
+      ],
+      "Brooklyn": [
+        "16:43:30",
+        "16:58:30"
+      ]
+    },
+    "0": {
+      "direction_name": "to The Bronx",
+      "Brooklyn": [
+        "05:41:30",
+        "22:32:30"
+      ],
+      "Manhattan": [
+        "05:01:00",
+        "24:37:00"
+      ],
+      "The Bronx": [
+        "15:47:30",
+        "17:31:00"
+      ]
+    }
+  },
+  "5": {
+    "1": {
+      "direction_name": "Southbound",
+      "The Bronx": [
+        "05:12:30",
+        "09:14:00"
+      ]
+    },
+    "0": {
+      "direction_name": "Northbound",
+      "The Bronx": [
+        "15:29:30",
+        "18:55:30"
+      ],
+      "Brooklyn": [
+        "06:04:00",
+        "20:36:30"
+      ]
+    }
+  },
+  "6": {
+    "1": {
+      "direction_name": "to Manhattan"
+    },
+    "0": {
+      "direction_name": "to The Bronx"
+    }
+  },
+  "7": {
+    "1": {
+      "direction_name": "to Manhattan",
+      "Queens": [
+        "06:24:30",
+        "08:42:30"
+      ]
+    },
+    "0": {
+      "direction_name": "to Queens"
+    }
+  },
+  "L": {
+    "0": {
+      "direction_name": "to Manhattan"
+    },
+    "1": {
+      "direction_name": "to Brooklyn"
+    }
+  },
+  "G": {
+    "1": {
+      "direction_name": "to Brooklyn"
+    },
+    "0": {
+      "direction_name": "to Queens"
+    }
+  },
+  "6X": {
+    "1": {
+      "direction_name": "to Manhattan",
+      "The Bronx": [
+        "06:09:00",
+        "08:09:30"
+      ]
+    },
+    "0": {
+      "direction_name": "to The Bronx",
+      "The Bronx": [
+        "12:30:00",
+        "14:39:00"
+      ]
+    }
+  },
+  "7X": {
+    "1": {
+      "direction_name": "to Manhattan",
+      "Queens": [
+        "06:15:00",
+        "07:41:00"
+      ]
+    },
+    "0": {
+      "direction_name": "to Queens",
+      "Queens": [
+        "14:46:00",
+        "16:38:30"
+      ]
+    }
+  },
+  "FX": {
+    "0": {
+      "direction_name": "to Jamaica-179 St",
+      "Brooklyn": [
+        "07:07:00",
+        "08:55:00"
+      ],
+      "Queens": [
+        "07:07:00",
+        "08:55:00"
+      ]
+    },
+    "1": {
+      "direction_name": "to Coney Island-Stillwell Av",
+      "Queens": [
+        "16:26:00",
+        "18:30:00"
+      ],
+      "Brooklyn": [
+        "16:26:00",
+        "18:30:00"
+      ]
+    }
+  },
+  "J": {
+    "1": {
+      "direction_name": "to Manhattan",
+      "express_J": [
+        "06:32:00",
+        "12:18:30"
+      ]
+    },
+    "0": {
+      "direction_name": "to Queens",
+      "express_J": [
+        "06:35:00",
+        "19:32:00"
+      ]
+    }
+  },
+  "Z": {
+    "1": {
+      "direction_name": "to Manhattan",
+      "Z_service": [
+        "07:21:00",
+        "08:12:00"
+      ]
+    },
+    "0": {
+      "direction_name": "to Queens",
+      "Z_service": [
+        "16:54:30",
+        "17:46:00"
+      ]
+    }
+  }
+}

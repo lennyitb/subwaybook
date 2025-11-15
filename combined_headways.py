@@ -144,7 +144,7 @@ def get_headway_dist(feed, direction_id, *route_ids, service_id='Weekday',
     route_list = list(route_ids)
 
     # Calculate combined headways
-    headways_by_hour = get_combined_headways_by_hour(
+    headways_by_hour, trains_by_hour = get_combined_headways_by_hour(
         feed,
         route_list,
         direction_id=direction_id,
@@ -156,10 +156,12 @@ def get_headway_dist(feed, direction_id, *route_ids, service_id='Weekday',
     # Build DataFrame
     rows = []
     for hour in range(24):
+        # Get number of trains from trains_by_hour
+        num_trains = trains_by_hour.get(hour, 0)
+
         if hour in headways_by_hour:
             headways = headways_by_hour[hour]
             if headways:
-                num_trains = len(headways)
                 avg_hw = sum(headways) / len(headways)
                 min_hw = min(headways)
                 max_hw = max(headways)
@@ -174,7 +176,7 @@ def get_headway_dist(feed, direction_id, *route_ids, service_id='Weekday',
             else:
                 rows.append({
                     'hour': hour,
-                    'num_trains': 0,
+                    'num_trains': num_trains,
                     'avg_headway': None,
                     'min_headway': None,
                     'max_headway': None
@@ -182,7 +184,7 @@ def get_headway_dist(feed, direction_id, *route_ids, service_id='Weekday',
         else:
             rows.append({
                 'hour': hour,
-                'num_trains': 0,
+                'num_trains': num_trains,
                 'avg_headway': None,
                 'min_headway': None,
                 'max_headway': None
@@ -881,6 +883,12 @@ def get_headway_dist_combined(feed, direction_id, *route_specs, service_id='Week
     departure_time_strings = stop_times['departure_time'].values
 
     headways_by_hour = defaultdict(list)
+    trains_by_hour = defaultdict(int)  # Count actual trains per hour
+
+    # Count trains per hour (by departure time)
+    for departure_time_str in departure_time_strings:
+        hour = parse_gtfs_time(departure_time_str)[0] % 24
+        trains_by_hour[hour] += 1
 
     if len(departure_times) < 2:
         # Not enough trips - return empty DataFrame
@@ -889,7 +897,7 @@ def get_headway_dist_combined(feed, direction_id, *route_specs, service_id='Week
         for hour in hour_list:
             rows.append({
                 'hour': hour,
-                'num_trains': 0 if len(departure_times) == 0 else 1,
+                'num_trains': trains_by_hour.get(hour, 0),
                 'avg_headway': None,
                 'min_headway': None,
                 'max_headway': None
@@ -915,10 +923,12 @@ def get_headway_dist_combined(feed, direction_id, *route_specs, service_id='Week
         hour_list = range(hour_range[0], hour_range[1] + 1) if hour_range else range(24)
         rows = []
         for hour in hour_list:
+            # Use actual train count from trains_by_hour
+            num_trains = trains_by_hour.get(hour, 0)
+
             if hour in headways_by_hour:
                 headways = headways_by_hour[hour]
                 if headways:
-                    num_trains = len(headways)
                     avg_hw = sum(headways) / len(headways)
                     min_hw = min(headways)
                     max_hw = max(headways)
@@ -933,7 +943,7 @@ def get_headway_dist_combined(feed, direction_id, *route_specs, service_id='Week
                 else:
                     rows.append({
                         'hour': hour,
-                        'num_trains': 0,
+                        'num_trains': num_trains,
                         'avg_headway': None,
                         'min_headway': None,
                         'max_headway': None
@@ -941,7 +951,7 @@ def get_headway_dist_combined(feed, direction_id, *route_specs, service_id='Week
             else:
                 rows.append({
                     'hour': hour,
-                    'num_trains': 0,
+                    'num_trains': num_trains,
                     'avg_headway': None,
                     'min_headway': None,
                     'max_headway': None
@@ -1060,10 +1070,16 @@ def get_combined_headways_by_hour(feed, route_ids, direction_id=None,
     departure_time_strings = trip_departures['departure_time'].values
 
     headways_by_hour = defaultdict(list)
+    trains_by_hour = defaultdict(int)  # Count actual trains per hour
 
     if len(departure_times) < 2:
         print(f"Not enough trips to calculate headways (found {len(departure_times)})")
         return {}
+
+    # Count trains per hour (by departure time)
+    for departure_time_str in departure_time_strings:
+        hour = parse_gtfs_time(departure_time_str)[0] % 24
+        trains_by_hour[hour] += 1
 
     # Calculate headways between consecutive trains (ANY route)
     for i in range(1, len(departure_times)):
@@ -1080,7 +1096,7 @@ def get_combined_headways_by_hour(feed, route_ids, direction_id=None,
 
         headways_by_hour[hour].append(headway_minutes)
 
-    return dict(headways_by_hour)
+    return dict(headways_by_hour), dict(trains_by_hour)
 
 
 def get_individual_and_combined_headways(feed, route_ids, direction_id=None,
@@ -1115,13 +1131,14 @@ def get_individual_and_combined_headways(feed, route_ids, direction_id=None,
         individual_headways[route_id] = headways
 
     # Calculate combined headways
-    combined_headways = get_combined_headways_by_hour(
+    combined_headways, trains_count = get_combined_headways_by_hour(
         feed, route_ids, direction_id, service_id, stop_id, exclude_first_last
     )
 
     return {
         'individual': individual_headways,
-        'combined': combined_headways
+        'combined': combined_headways,
+        'trains_count': trains_count
     }
 
 

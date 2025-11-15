@@ -571,6 +571,236 @@ def get_express_service_times(feed, route_id, direction_id=0, service_id=None, b
     }
 
 
+def get_express_service_window(feed, route_id, direction_id, service_id='Weekday', borough=None):
+    """
+    Get the express service window for a route (NOT for J/Z lines - they use skip_stop.py).
+
+    Returns the first and last express trains for each borough the route passes through,
+    using heuristics to avoid being thrown off by occasional local trains during the day
+    or short-turn express trains.
+
+    The algorithm:
+    1. Get all express trips per borough
+    2. Find continuous blocks of express service (allowing small gaps)
+    3. Return the start/end of the largest continuous block for each borough
+
+    Parameters:
+    -----------
+    feed : gtfs_kit.Feed
+        A GTFS feed object loaded with gtfs_kit
+    route_id : str
+        The route ID (e.g., 'A', 'D', 'E', '2', '3', '4', '5')
+        DO NOT use for 'J' or 'Z' - use skip_stop.get_express_service_window instead
+    direction_id : int
+        Direction ID (0 or 1)
+    service_id : str, default='Weekday'
+        Service ID to filter by (e.g., 'Weekday', 'Saturday', 'Sunday')
+    borough : str, optional
+        Specific borough to check for express service (e.g., 'Manhattan', 'Brooklyn')
+        If None, returns windows for ALL boroughs the route passes through
+
+    Returns:
+    --------
+    dict or tuple
+        If borough is None:
+            Returns dict mapping borough -> (first_express_time, last_express_time)
+            e.g., {'Manhattan': ('05:12:30', '22:18:00'), 'Brooklyn': ('05:15:00', '22:20:00')}
+            Boroughs with no express service are omitted from the dict
+        If borough is specified:
+            Returns tuple (first_express_time, last_express_time) for that borough
+            Returns (None, None) if no express service in that borough
+
+    Examples:
+    ---------
+    >>> feed = gk.read_feed("gtfs_subway.zip", dist_units="m")
+    >>>
+    >>> # Get express windows for all boroughs
+    >>> windows = get_express_service_window(feed, 'A', 0, 'Weekday')
+    >>> for boro, (first, last) in windows.items():
+    ...     print(f"A train express in {boro}: {first} to {last}")
+    >>>
+    >>> # Get express window for specific borough
+    >>> first, last = get_express_service_window(feed, 'A', 0, 'Weekday', borough='Manhattan')
+    >>> print(f"A train express in Manhattan: {first} to {last}")
+
+    Notes:
+    ------
+    - For J/Z trains, use skip_stop.get_express_service_window() instead
+    - The function allows for small gaps (< 2 hours) in express service to handle
+      occasional local trips or service changes
+    - Returns the largest continuous block of express service
+    - Hardcoded special cases:
+      * A trains are always local in Queens
+      * B trains are always express in Manhattan and Brooklyn (weekdays only, ~6 AM-10 PM)
+      * C, M, R, 1, 6, L, G trains are always local (never run express)
+      * F trains are never express in Brooklyn
+    """
+    # Hardcoded special case: trains that are always local (never run express)
+    if route_id in ['C', 'M', 'R', '1', '6', 'L', 'G']:
+        if borough is None:
+            return {}
+        else:
+            return None, None
+
+    # Hardcoded special case: A trains are always local in Queens
+    if route_id == 'A' and borough == 'Queens':
+        return None, None
+
+    # Hardcoded special case: F trains are never express in Brooklyn
+    if route_id == 'F' and borough == 'Brooklyn':
+        return None, None
+
+    # Hardcoded special case: B trains always run express in both Manhattan and Brooklyn (daytime weekdays only)
+    if route_id == 'B' and borough in ['Brooklyn', 'Manhattan']:
+        if service_id == 'Weekday':
+            # B train only runs weekdays, approximately 6 AM to 10 PM
+            return '06:00:00', '22:00:00'
+        else:
+            return None, None  # No weekend B service
+
+    # If requesting all boroughs, analyze each one
+    if borough is None:
+        # Get all boroughs this route passes through
+        patterns = analyze_route_express_patterns(feed, route_id, direction_id, service_id)
+
+        if patterns.empty:
+            return {}
+
+        borough_cols = [col for col in patterns.columns
+                       if col in ['Manhattan', 'Brooklyn', 'Queens', 'Bronx', 'Staten Island']]
+
+        # Get express windows for each borough using the already-computed patterns
+        result = {}
+        for boro in borough_cols:
+            # Check hardcoded special cases first
+            if route_id == 'A' and boro == 'Queens':
+                continue
+
+            if route_id == 'F' and boro == 'Brooklyn':
+                continue
+
+            if route_id == 'B' and boro in ['Brooklyn', 'Manhattan']:
+                if service_id == 'Weekday':
+                    result[boro] = ('06:00:00', '22:00:00')
+                continue
+
+            # Process this borough directly using the patterns we already have
+            first, last = _get_express_window_from_patterns(feed, patterns, boro)
+            if first and last:
+                result[boro] = (first, last)
+
+        return result
+
+    # Single borough analysis
+    # Get all patterns first (will be used by helper function)
+    patterns = analyze_route_express_patterns(feed, route_id, direction_id, service_id)
+
+    if patterns.empty:
+        return None, None
+
+    # Use helper function to extract window from patterns
+    return _get_express_window_from_patterns(feed, patterns, borough)
+
+
+def _get_express_window_from_patterns(feed, patterns, borough):
+    """
+    Helper function to extract express service window from already-computed patterns.
+
+    Parameters:
+    -----------
+    feed : gtfs_kit.Feed
+        A GTFS feed object loaded with gtfs_kit
+    patterns : pd.DataFrame
+        Already-computed patterns from analyze_route_express_patterns()
+    borough : str
+        Specific borough to check for express service
+
+    Returns:
+    --------
+    tuple
+        (first_express_time, last_express_time) for that borough
+        Returns (None, None) if no express service in that borough
+    """
+    if patterns.empty:
+        return None, None
+
+    # Check if borough exists in patterns
+    if borough not in patterns.columns:
+        return None, None
+
+    # Identify express trips in this borough
+    patterns_copy = patterns.copy()
+    patterns_copy['is_express'] = patterns_copy[borough] == 'express'
+
+    express_trips = patterns_copy[patterns_copy['is_express']].copy()
+
+    if express_trips.empty:
+        return None, None
+
+    # Get departure times for each trip
+    trip_times = []
+    for trip_id in express_trips['trip_id']:
+        stop_times = feed.stop_times[feed.stop_times['trip_id'] == trip_id].copy()
+        stop_times = stop_times.sort_values('stop_sequence')
+
+        if not stop_times.empty:
+            first_departure = stop_times.iloc[0]['departure_time']
+
+            # Parse time to get hours for sorting (handle 24+ hour times)
+            parts = first_departure.split(':')
+            departure_seconds = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+
+            trip_times.append({
+                'departure_time': first_departure,
+                'departure_seconds': departure_seconds
+            })
+
+    if not trip_times:
+        return None, None
+
+    # Sort by departure time
+    trip_times.sort(key=lambda x: x['departure_seconds'])
+    all_express_trips = trip_times
+
+    if not all_express_trips:
+        return None, None
+
+    # If only a few express trips (< 5), just return first and last
+    if len(all_express_trips) < 5:
+        return all_express_trips[0]['departure_time'], all_express_trips[-1]['departure_time']
+
+    # Find continuous blocks of express service
+    # Allow gaps of up to 2 hours (7200 seconds) within a block
+    MAX_GAP_SECONDS = 7200
+
+    blocks = []
+    current_block_start = 0
+    current_block_end = 0
+
+    for i in range(1, len(all_express_trips)):
+        gap = all_express_trips[i]['departure_seconds'] - all_express_trips[i-1]['departure_seconds']
+
+        if gap <= MAX_GAP_SECONDS:
+            # Continue current block
+            current_block_end = i
+        else:
+            # Gap too large - save current block and start new one
+            blocks.append((current_block_start, current_block_end))
+            current_block_start = i
+            current_block_end = i
+
+    # Save the last block
+    blocks.append((current_block_start, current_block_end))
+
+    # Find the largest block (by number of trips)
+    largest_block = max(blocks, key=lambda b: b[1] - b[0])
+
+    first_express = all_express_trips[largest_block[0]]['departure_time']
+    last_express = all_express_trips[largest_block[1]]['departure_time']
+
+    return first_express, last_express
+
+
 def summarize_express_service(feed, route_id, service_days=None, borough=None):
     """
     Summarize express service times for a route across all service days and directions.

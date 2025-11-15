@@ -3,7 +3,7 @@
 
 ## Introduction
 
-I intend to author a spiral bound book with helpful information to navigate the New York City Subway. This project contains some python scripts to comprehend and organize the GTFS schedule data published by the MTA. It has been 100% written by AI
+I intend to author a spiral bound book with helpful information to navigate the New York City Subway. This project contains some python scripts to comprehend and organize the GTFS schedule data published by the MTA. It has been 100% written by AI. Check readme_supplement.md for an overview of the key functions.
 
 ## License
 
